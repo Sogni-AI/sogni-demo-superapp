@@ -1,0 +1,13 @@
+{
+  "name": "sogni-tattoo-ideas",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "concurrently -k -n WEB,API -c cyan,magenta \"pnpm --filter ./web dev\" \"pnpm --filter ./server dev\"",
+    "build": "pnpm -r build",
+    "start": "pnpm --filter ./server start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

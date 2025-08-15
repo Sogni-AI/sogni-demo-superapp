@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Sogni Tattoo Lab — Teaching Demo</title>
+    <meta name="theme-color" content="#111827" />
+    <style>
+      /*
+        Design system: calm, airy, and intentional.
+        - Variables + light/dark support
+        - Tight vertical rhythm
+        - Great defaults and focus states
+      */
+      :root {
+        --bg: #0b0f17;
+        --panel: #121826;
+        --card: #151b2c;
+        --text: #e7ecf3;
+        --muted: #99a3b4;
+        --border: #2b3347;
+        --accent: #5dd0ff;
+        --accent-ink: #061925;
+        --focus: 0 0 0 3px rgba(93, 208, 255, 0.35);
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f7f8fb;
+          --panel: #ffffff;
+          --card: #ffffff;
+          --text: #101622;
+          --muted: #475066;
+          --border: #e8ecf3;
+          --accent: #2152ff;
+          --accent-ink: #eef1ff;
+          --focus: 0 0 0 3px rgba(33, 82, 255, 0.25);
+        }
+      }
+
+      * { box-sizing: border-box }
+      html, body { height: 100% }
+      body {
+        margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial;
+        background: radial-gradient(60rem 40rem at 20% -10%, rgba(93,208,255,.08), transparent 60%),
+                    radial-gradient(50rem 30rem at 110% 20%, rgba(140,88,255,.08), transparent 60%),
+                    var(--bg);
+        color: var(--text);
+      }
+
+      a { color: inherit; text-decoration: none }
+      .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px 56px }
+
+      /* Header */
+      .brand {
+        display: flex; align-items: center; justify-content: space-between;
+        position: sticky; top: 0; z-index: 10; padding: 16px 0 12px;
+        background: linear-gradient(var(--bg) 60%, transparent);
+        backdrop-filter: saturate(1.1);
+      }
+      .brand h1 {
+        font-size: clamp(18px, 3vw, 22px); margin: 0; letter-spacing: .2px; font-weight: 600;
+      }
+      .brand .mark {
+        display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 999px;
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, var(--panel), var(--card));
+        box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 10px 30px rgba(0,0,0,.12);
+      }
+      .mark .dot {
+        width: 8px; height: 8px; border-radius: 999px; background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(93,208,255,.15);
+      }
+
+      /* Cards & layout */
+      .grid {
+        display: grid; gap: 16px;
+        grid-template-columns: 1fr;
+      }
+      @media (min-width: 740px) {
+        .grid { grid-template-columns: 1.2fr .8fr; }
+      }
+      @media (min-width: 1100px) {
+        .grid { grid-template-columns: 1.1fr .9fr; }
+      }
+
+      .card {
+        background: linear-gradient(180deg, var(--panel), var(--card));
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px;
+        box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 14px 40px rgba(0,0,0,.12);
+      }
+      .card + .card { margin-top: 0 }
+
+      .subtle { color: var(--muted); font-size: 13px }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; white-space: pre-wrap }
+
+      /* Form */
+      .row { display: grid; gap: 12px; grid-template-columns: 1fr }
+      .row.two { grid-template-columns: 1fr 1fr }
+      .row.three { grid-template-columns: 1fr 1fr 1fr }
+      @media (max-width: 640px) {
+        .row.two, .row.three { grid-template-columns: 1fr }
+      }
+
+      label { display: grid; gap: 6px; font-size: 13px }
+      input, select, textarea, button {
+        font: inherit; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--border);
+        background: linear-gradient(180deg, var(--panel), var(--card)); color: var(--text);
+        outline: none; transition: border .15s ease, box-shadow .15s ease, transform .06s ease;
+      }
+      input:focus, select:focus, textarea:focus, button:focus {
+        box-shadow: var(--focus);
+        border-color: color-mix(in oklab, var(--accent) 60%, var(--border));
+      }
+      input::placeholder { color: color-mix(in oklab, var(--muted) 50%, #999) }
+
+      .btn {
+        cursor: pointer; font-weight: 600; letter-spacing: .2px;
+        user-select: none; -webkit-user-select: none;
+      }
+      .btn.primary {
+        background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 70%, white), var(--accent));
+        color: var(--accent-ink); border-color: color-mix(in oklab, var(--accent) 60%, #000);
+      }
+      .btn.primary:hover { transform: translateY(-1px) }
+      .btn:disabled { opacity: .6; cursor: not-allowed; transform: none }
+
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px }
+
+      /* Idea grid */
+      .ideas {
+        display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+
+      .progress { height: 8px; background: #0f1320; border-radius: 999px; overflow: hidden; border: 1px solid var(--border); margin-top: 8px }
+      .bar { height: 100%; background: linear-gradient(90deg, var(--accent), #8f77ff); width: 0% }
+
+      .img-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top: 10px }
+      .img-grid img {
+        width: 100%; border-radius: 12px; border: 1px solid var(--border);
+        display: block; aspect-ratio: 1 / 1; object-fit: cover;
+        background: #0f1320;
+      }
+
+      footer { margin-top: 28px; color: var(--muted); font-size: 13px }
+      .kbd {
+        border: 1px solid var(--border); padding: 2px 6px; border-radius: 6px; background: var(--panel);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header class="brand">
+        <div class="mark">
+          <div class="dot"></div>
+          <strong>Sogni Tattoo Lab</strong>
+        </div>
+        <div class="subtle">Teaching demo</div>
+      </header>
+
+      <div id="root"></div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
