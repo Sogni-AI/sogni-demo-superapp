@@ -1,6 +1,6 @@
 # Sogni Tattoo Ideas — Teaching Demo
 
-A tiny, production‑grade scaffold that shows **how to build a Gen‑AI app with Sogni**:
+A tiny, production‑grade scaffold that shows **how to build a Gen‑AI app powered by the dePIN Sogni Supernet render network**:
 
 - ✨ Simple but thoughtfully designed UI
 - 🔌 Minimal Express API that calls the Sogni SDK
@@ -14,6 +14,9 @@ A tiny, production‑grade scaffold that shows **how to build a Gen‑AI app wit
 ## Quickstart
 
 ```bash
+# we're using the recently popular pnpm package manager for this repo so you can install it if you don't already have it
+npm install -g pnpm
+
 # from the repo root
 pnpm install
 

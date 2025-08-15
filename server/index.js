@@ -22,12 +22,13 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { Readable } from 'node:stream';
+import { createServer } from 'node:net';
 
 const app = express();
 app.use(express.json({ limit: '8mb' }));
 
 /** Resolve allowed origins (comma-separated in CLIENT_ORIGIN) */
-const origins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
+const origins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173,http://localhost:5174,http://localhost:5175')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
@@ -44,6 +45,27 @@ app.use(
 );
 
 const PORT = process.env.PORT || 3001;
+
+// Helper function to check if a port is available
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const server = createServer();
+    server.listen(port, () => {
+      server.close(() => resolve(true));
+    });
+    server.on('error', () => resolve(false));
+  });
+}
+
+// Helper function to find an available port
+async function findAvailablePort(startPort = 3001) {
+  for (let port = startPort; port <= startPort + 10; port++) {
+    if (await isPortAvailable(port)) {
+      return port;
+    }
+  }
+  throw new Error(`No available ports found between ${startPort} and ${startPort + 10}`);
+}
 
 // Map of projectId -> Set<SSE response objects>
 const sseClients = new Map();
@@ -93,10 +115,34 @@ async function getSogniClient() {
   });
 
   // Log in and connect socket
-  await client.account.login(process.env.SOGNI_USERNAME, process.env.SOGNI_PASSWORD).catch(err => {
+  try {
+    if (!process.env.SOGNI_USERNAME || !process.env.SOGNI_PASSWORD) {
+      console.warn('⚠️  SOGNI_USERNAME or SOGNI_PASSWORD not set. Using demo mode.');
+      console.warn('   Set credentials in server/.env to enable real image generation.');
+      // Continue without login for demo purposes
+    } else {
+      await client.account.login(process.env.SOGNI_USERNAME, process.env.SOGNI_PASSWORD);
+      console.log('✅ Logged into Sogni successfully');
+    }
+  } catch (err) {
     if (ignoreProjectNotFound(err)) return; // rare edge if SDK probes
-    throw err;
-  });
+    console.error('❌ Sogni login failed:', err.message);
+    console.warn('⚠️  Continuing in demo mode. Set valid credentials to enable image generation.');
+  }
+
+  // Debug: Listen to all WebSocket events to see what's happening
+  if (client.apiClient && client.apiClient.socket) {
+    const originalOn = client.apiClient.socket.on;
+    client.apiClient.socket.on = function(event, handler) {
+      const wrappedHandler = function(...args) {
+        if (event === 'jobState' || event === 'jobResult' || event === 'jobProgress') {
+          console.log(`[WebSocket] ${event} event:`, args[0]);
+        }
+        return handler.apply(this, args);
+      };
+      return originalOn.call(this, event, wrappedHandler);
+    };
+  }
 
   // Ensure socket is online (some SDK builds auto-connect on first use)
   if (typeof client.connect === 'function') {
@@ -175,24 +221,48 @@ function normalizeProgress(value, step, stepCount) {
  *   (URLs expire; SDK recommends fetching on demand.)
  */
 async function ensureJobResultUrl(project, jobId, eventResultUrl) {
-  if (eventResultUrl) return eventResultUrl;
+  console.log('[ensureJobResultUrl] Called with:', { jobId, hasEventUrl: !!eventResultUrl, hasProject: !!project });
 
-  try {
-    const jobEntity = project && typeof project.job === 'function' ? project.job(jobId) : undefined;
-    if (jobEntity && typeof jobEntity.getResultUrl === 'function') {
-      const url = await jobEntity.getResultUrl(); // signed URL (expires ~30m)
-      return url;
-    }
-  } catch {
-    // ignore; will fall through
+  if (eventResultUrl) {
+    console.log('[ensureJobResultUrl] Using event result URL:', eventResultUrl);
+    return eventResultUrl;
   }
-  // As an absolute fallback, try jobEntity?.resultUrl (may be undefined/null)
-  try {
-    const jobEntity = project && typeof project.job === 'function' ? project.job(jobId) : undefined;
-    return jobEntity?.resultUrl;
-  } catch {
+
+  if (!project) {
+    console.warn('[ensureJobResultUrl] No project available');
     return undefined;
   }
+
+  try {
+    const jobEntity = typeof project.job === 'function' ? project.job(jobId) : undefined;
+    console.log('[ensureJobResultUrl] Job entity found:', !!jobEntity);
+
+    if (jobEntity) {
+      // Try getResultUrl method first (fresh signed URL)
+      if (typeof jobEntity.getResultUrl === 'function') {
+        try {
+          const url = await jobEntity.getResultUrl();
+          console.log('[ensureJobResultUrl] Got fresh URL via getResultUrl():', url);
+          return url;
+        } catch (err) {
+          console.warn('[ensureJobResultUrl] getResultUrl() failed:', err.message);
+        }
+      }
+
+      // Fallback to cached resultUrl property
+      if (jobEntity.resultUrl) {
+        console.log('[ensureJobResultUrl] Using cached resultUrl:', jobEntity.resultUrl);
+        return jobEntity.resultUrl;
+      }
+
+      console.log('[ensureJobResultUrl] Job entity has no result URL');
+    }
+  } catch (err) {
+    console.error('[ensureJobResultUrl] Error accessing job entity:', err);
+  }
+
+  console.warn('[ensureJobResultUrl] No result URL available for job:', jobId);
+  return undefined;
 }
 
 /**
@@ -201,26 +271,49 @@ async function ensureJobResultUrl(project, jobId, eventResultUrl) {
  * to project.resultUrls if any call fails.
  */
 async function collectProjectResultUrls(project) {
+  console.log('[collectProjectResultUrls] Called with project:', !!project);
   if (!project) return [];
+
   try {
     const jobs = Array.isArray(project.jobs) ? project.jobs : [];
+    console.log('[collectProjectResultUrls] Found jobs:', jobs.length);
+
     if (jobs.length > 0) {
+      console.log('[collectProjectResultUrls] Job details:', jobs.map(j => ({
+        id: j.id,
+        status: j.status,
+        hasGetResultUrl: typeof j.getResultUrl === 'function',
+        resultUrl: j.resultUrl
+      })));
+
       const list = await Promise.all(
-        jobs.map(async (j) => {
-          try { return await j.getResultUrl?.(); } // preferred
-          catch { return j?.resultUrl; }
+        jobs.map(async (j, index) => {
+          try {
+            const url = await j.getResultUrl?.();
+            console.log(`[collectProjectResultUrls] Job ${index} getResultUrl():`, url);
+            return url;
+          } catch (err) {
+            console.log(`[collectProjectResultUrls] Job ${index} getResultUrl() failed:`, err.message);
+            console.log(`[collectProjectResultUrls] Job ${index} fallback resultUrl:`, j?.resultUrl);
+            return j?.resultUrl;
+          }
         })
       );
-      return list.filter(Boolean);
+      const filtered = list.filter(Boolean);
+      console.log('[collectProjectResultUrls] Final filtered list:', filtered);
+      return filtered;
     }
-  } catch {
-    // fall through
+  } catch (err) {
+    console.error('[collectProjectResultUrls] Error in jobs processing:', err);
   }
+
   // Fallback to snapshot getter (may already contain URLs)
   try {
     const urls = project.resultUrls || [];
+    console.log('[collectProjectResultUrls] Fallback project.resultUrls:', urls);
     return Array.isArray(urls) ? urls.filter(Boolean) : [];
-  } catch {
+  } catch (err) {
+    console.error('[collectProjectResultUrls] Error in fallback:', err);
     return [];
   }
 }
@@ -352,14 +445,88 @@ app.post('/api/generate', async (req, res) => {
         return;
       }
 
-      if (evt.type === 'completed') {
-        // Push aggregated results (broad UI compatibility)
+            if (evt.type === 'completed') {
+        console.log('[Project] Project completed event:', projectId);
+
+                // Try multiple approaches to get result URLs
         try {
-          const urls = await collectProjectResultUrls(project);
-          if (urls.length) {
-            emitToProject(projectId, { type: 'results', urls });
+          console.log('[Project] Project status:', project.status);
+          console.log('[Project] Project jobs count:', project.jobs?.length || 0);
+          console.log('[Project] Project resultUrls:', project.resultUrls);
+
+          let urls = [];
+
+          // Approach 1: Use project.resultUrls directly
+          if (project.resultUrls && project.resultUrls.length) {
+            console.log('[Project] Using project.resultUrls directly:', project.resultUrls);
+            urls = project.resultUrls;
           }
-        } catch { /* ignore */ }
+
+          // Approach 2: Manual collection from jobs
+          if (!urls.length) {
+            console.log('[Project] Trying manual collection...');
+            urls = await collectProjectResultUrls(project);
+            console.log('[Project] Manual collection result:', urls);
+          }
+
+          // Approach 3: If jobs are still processing, wait and retry
+          if (!urls.length && project.jobs && project.jobs.length) {
+            const processingJobs = project.jobs.filter(job => job.status === 'processing');
+            if (processingJobs.length > 0) {
+              console.log(`[Project] Found ${processingJobs.length} jobs still processing, waiting...`);
+
+              // Wait a bit for jobs to complete
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                console.log(`[Project] Retry attempt ${attempt}/3...`);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+
+                // Try collecting again
+                urls = await collectProjectResultUrls(project);
+                console.log(`[Project] Retry ${attempt} collection result:`, urls);
+
+                if (urls.length > 0) break;
+              }
+            }
+          }
+
+          // Approach 4: Try the SDK's waitForCompletion as final attempt
+          if (!urls.length && project.status === 'completed') {
+            console.log('[Project] Trying waitForCompletion...');
+            try {
+              urls = await Promise.race([
+                project.waitForCompletion(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+              ]);
+              console.log('[Project] waitForCompletion returned:', urls);
+            } catch (waitErr) {
+              console.log('[Project] waitForCompletion failed/timed out:', waitErr.message);
+            }
+          }
+
+                  if (urls && urls.length) {
+          console.log('[Project] Found result URLs but not sending results event (individual job events already sent):', urls.length);
+          // Note: Disabled project-level 'results' event to prevent duplicate images
+          // Individual 'jobCompleted' events already provide real-time results
+          // emitToProject(projectId, { type: 'results', urls });
+        } else {
+          console.warn('[Project] No result URLs found after all attempts');
+
+          // Approach 5: If we have jobs, try to construct proxy URLs as fallback
+          if (project.jobs && project.jobs.length) {
+            console.log('[Project] Trying proxy URL fallback...');
+            const proxyUrls = project.jobs.map(job =>
+              `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(job.id)}`
+            ).filter(Boolean);
+
+            if (proxyUrls.length) {
+              console.log('[Project] Using proxy URLs as fallback:', proxyUrls);
+              emitToProject(projectId, { type: 'results', urls: proxyUrls, isProxy: true });
+            }
+          }
+        }
+        } catch (err) {
+          console.error('[Project] Error getting result URLs:', err);
+        }
 
         emitToProject(projectId, { type: 'completed' });
         detach(); // stop listening for this project
@@ -379,11 +546,27 @@ app.post('/api/generate', async (req, res) => {
       emitJobLifecycle(project, jobIndexById, evt);
 
       if (evt.type === 'completed') {
+        console.log('[Job] Job completed event:', evt.jobId);
+
         // Try to ensure we have a usable URL (event may not include one)
-        const resultUrl = await ensureJobResultUrl(project, evt.jobId, evt.resultUrl);
+        let resultUrl = await ensureJobResultUrl(project, evt.jobId, evt.resultUrl);
+        console.log('[Job] Initial result URL:', resultUrl);
+
+        // If no URL immediately available, try a few more times with delay
+        if (!resultUrl) {
+          console.log('[Job] Retrying to get result URL...');
+          for (let i = 0; i < 3; i++) {
+            await new Promise(resolve => setTimeout(resolve, 500 * (i + 1))); // 500ms, 1s, 1.5s delays
+            resultUrl = await ensureJobResultUrl(project, evt.jobId, evt.resultUrl);
+            if (resultUrl) {
+              console.log('[Job] Got result URL on retry', i + 1, ':', resultUrl);
+              break;
+            }
+          }
+        }
 
         // SDK-like 'jobCompleted' event (preferred by FE)
-        emitToProject(projectId, {
+        const jobCompletedEvent = {
           type: 'jobCompleted',
           job: {
             id: evt.jobId,
@@ -392,13 +575,13 @@ app.post('/api/generate', async (req, res) => {
           },
           // Same-origin proxy for blob/XHR if CDN CORS blocks
           proxyUrl: `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(evt.jobId)}`
-        });
+        };
 
-        // Back-compat aliases for older UIs
-        if (resultUrl) {
-          emitToProject(projectId, { type: 'final', jobId: evt.jobId, url: resultUrl });
-          emitToProject(projectId, { type: 'result', jobId: evt.jobId, url: resultUrl });
-        }
+        console.log('[Job] Emitting jobCompleted event:', jobCompletedEvent);
+        emitToProject(projectId, jobCompletedEvent);
+
+        // Note: Removed legacy 'final' and 'result' events to prevent duplicate images
+        // The modern 'jobCompleted' event contains all necessary information
       }
 
       if (evt.type === 'error' || evt.type === 'failed') {
@@ -412,15 +595,31 @@ app.post('/api/generate', async (req, res) => {
       }
     };
 
-    // Attach once per project
-    sogniClient.projects.on('project', onProject);
-    sogniClient.projects.on('job', onJob);
+    // Debug: Log all events we receive
+    const debugProject = (evt) => {
+      console.log('[DEBUG] Project event received:', evt.type, evt.projectId);
+      onProject(evt);
+    };
 
-    // Helper to remove listeners when we’re done
+    const debugJob = (evt) => {
+      console.log('[DEBUG] Job event received:', evt.type, evt.projectId, evt.jobId);
+      onJob(evt);
+    };
+
+    // Attach once per project
+    sogniClient.projects.on('project', debugProject);
+    sogniClient.projects.on('job', debugJob);
+
+    // Helper to remove listeners when we're done
     function detach() {
-      try { sogniClient.projects.off('project', onProject); } catch {}
-      try { sogniClient.projects.off('job', onJob); } catch {}
-      activeProjects.delete(projectId);
+      try { sogniClient.projects.off('project', debugProject); } catch {}
+      try { sogniClient.projects.off('job', debugJob); } catch {}
+      // DON'T remove from activeProjects yet - proxy endpoint needs it
+      // We'll clean it up after a delay to allow proxy access
+      setTimeout(() => {
+        activeProjects.delete(projectId);
+        console.log(`[Cleanup] Removed project ${projectId} from active projects after delay`);
+      }, 10 * 60 * 1000); // 10 minutes
     }
   } catch (err) {
     if (ignoreProjectNotFound(err)) {
@@ -509,13 +708,20 @@ app.get('/api/cancel/:projectId', async (req, res) => {
 app.get('/api/result/:projectId/:jobId', async (req, res) => {
   try {
     const { projectId, jobId } = req.params;
+    console.log(`[Proxy] Request for project ${projectId}, job ${jobId}`);
+
     const project = activeProjects.get(projectId);
+    console.log(`[Proxy] Project found:`, !!project);
 
     if (!project) {
+      console.log(`[Proxy] Available projects:`, Array.from(activeProjects.keys()));
       return res.status(404).json({ error: 'Project not active (result may have expired)' });
     }
 
+    console.log(`[Proxy] Attempting to get result URL for job ${jobId}`);
     const url = await ensureJobResultUrl(project, jobId);
+    console.log(`[Proxy] Result URL:`, url ? 'found' : 'not found');
+
     if (!url) {
       return res.status(404).json({ error: 'Result URL not available' });
     }
@@ -543,7 +749,54 @@ app.get('/api/health', (_, res) => {
   res.json({ ok: true, env: process.env.SOGNI_ENV || 'production' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Sogni tattoo ideas API running on http://localhost:${PORT}`);
-  console.log(`Allowed CORS origins: ${origins.join(', ')}`);
+// Start server with automatic port selection
+async function startServer() {
+  let actualPort = PORT;
+
+  // If the preferred port is in use, find an available one
+  if (!(await isPortAvailable(PORT))) {
+    console.warn(`⚠️  Port ${PORT} is in use, finding an available port...`);
+    try {
+      actualPort = await findAvailablePort(PORT);
+      console.log(`✅ Found available port: ${actualPort}`);
+    } catch (err) {
+      console.error(`❌ ${err.message}`);
+      process.exit(1);
+    }
+  }
+
+  const server = app.listen(actualPort, () => {
+    console.log(`🚀 Sogni tattoo ideas API running on http://localhost:${actualPort}`);
+    console.log(`🔒 Allowed CORS origins: ${origins.join(', ')}`);
+    if (actualPort !== PORT) {
+      console.log(`📝 Note: Using port ${actualPort} instead of ${PORT}`);
+    }
+  });
+
+  server.on('error', (err) => {
+    console.error('❌ Server error:', err);
+    process.exit(1);
+  });
+
+  return server;
+}
+
+// Start the server
+const server = await startServer();
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });

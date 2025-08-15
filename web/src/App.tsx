@@ -126,7 +126,14 @@ export default function App() {
       const close = () => { try { es.close(); } catch {} };
 
       es.onmessage = (evt) => {
-        const data = JSON.parse(evt.data);
+        let data;
+        try {
+          data = JSON.parse(evt.data);
+          console.log('[SSE]', data); // Debug logging
+        } catch (err) {
+          console.error('[SSE] Invalid JSON:', evt.data);
+          return;
+        }
 
         setIdeas(prev => prev.map(i => {
           if (i.id !== idea.id) return i;
@@ -142,8 +149,25 @@ export default function App() {
             const previews = Array.from(new Set([...(i.previews || []), data.url]));
             return { ...i, previews };
           }
-          if (data.type === 'jobCompleted' && data.resultUrl) {
-            const images = Array.from(new Set([...(i.images || []), data.resultUrl]));
+          if (data.type === 'jobCompleted' && data.job?.resultUrl) {
+            console.log('[SSE] Got jobCompleted with resultUrl:', data.job.resultUrl);
+            const images = Array.from(new Set([...(i.images || []), data.job.resultUrl]));
+            return { ...i, images, progress: 100 };
+          }
+          // Also handle legacy event formats for compatibility
+          if (data.type === 'final' && data.url) {
+            console.log('[SSE] Got final with url:', data.url);
+            const images = Array.from(new Set([...(i.images || []), data.url]));
+            return { ...i, images, progress: 100 };
+          }
+          if (data.type === 'result' && data.url) {
+            console.log('[SSE] Got result with url:', data.url);
+            const images = Array.from(new Set([...(i.images || []), data.url]));
+            return { ...i, images, progress: 100 };
+          }
+          if (data.type === 'results' && data.urls) {
+            console.log('[SSE] Got results with urls:', data.urls);
+            const images = Array.from(new Set([...(i.images || []), ...data.urls]));
             return { ...i, images, progress: 100 };
           }
           if (data.type === 'completed') {
@@ -154,7 +178,8 @@ export default function App() {
           if (data.type === 'error' || data.type === 'jobFailed') {
             close();
             announce('render failed');
-            return { ...i, generating: false, sse: null, error: data.message || 'Render failed' };
+            const errorMsg = data.error || data.message || data.job?.error || 'Render failed';
+            return { ...i, generating: false, sse: null, error: errorMsg };
           }
 
           return i;
