@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <title>SogniTattoo Studio — AI-Powered Design Brainstorming</title>
+    <title>Sogni Tattoo Flash Studio — AI-Powered Design Brainstorming</title>
     <meta name="theme-color" content="#111827" />
 
     <!-- Punk Fonts -->
@@ -559,11 +559,70 @@
         height: auto;
         object-fit: contain;
         border-radius: 16px;
-        border: 4px solid var(--accent);
+        border: 2px solid var(--border);
         box-shadow: var(--shadow-lg);
         animation: heroImageIn 0.8s ease forwards;
         filter: contrast(1.1) saturate(1.2);
         transform: rotate(-1deg);
+      }
+
+      /* Original Hero Prompt */
+      .hero-prompt-container {
+        position: absolute;
+        bottom: -80px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: block;
+        z-index: 100;
+        border: 2px solid var(--border);
+        border-radius: 12px;
+        padding: 0.75rem 1.75rem 0.75rem 1rem;
+        background: var(--card);
+        backdrop-filter: var(--blur);
+        box-shadow: var(--shadow-lg);
+        max-width: min(600px, 85vw);
+        width: auto;
+        text-align: center;
+      }
+
+      .hero-prompt-text {
+        color: var(--text);
+        font-size: 0.8rem;
+        text-align: center;
+        opacity: 1;
+        font-weight: 500;
+        margin: 0;
+        white-space: normal;
+        word-wrap: break-word;
+        line-height: 1.2;
+        width: 100%;
+      }
+
+      .hero-prompt-close {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 20px;
+        height: 20px;
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        opacity: 0.6;
+      }
+
+      .hero-prompt-close:hover {
+        background: var(--text-secondary);
+        color: var(--card);
+        border-radius: 6px;
+        opacity: 1;
+        transform: scale(1.1);
       }
 
       /* Hero Loading Indicator */
@@ -817,6 +876,162 @@
         animation: shimmer 2s infinite;
         border-radius: 12px;
         border: 2px solid var(--border);
+      }
+
+      /* Refinement Exit Button */
+      .refinement-exit-container {
+        position: absolute;
+        bottom: -80px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+        z-index: 100;
+      }
+
+      .refinement-prompt-text {
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        text-align: center;
+        opacity: 0.8;
+        margin-bottom: 0.25rem;
+      }
+
+      .refinement-combined-container {
+        position: relative;
+        border: 2px solid var(--border);
+        border-radius: 12px;
+        padding: 0.75rem 1rem;
+        background: var(--card);
+        backdrop-filter: var(--blur);
+        box-shadow: var(--shadow-lg);
+        max-width: min(600px, 85vw);
+        width: auto;
+        text-align: center;
+      }
+
+      .refinement-combined-text {
+        color: var(--text);
+        font-size: 0.8rem;
+        font-weight: 500;
+        line-height: 1.2;
+        margin: 0;
+      }
+
+      .refinement-original-text {
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        opacity: 0.8;
+      }
+
+      .refinement-exit-btn {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1.5rem;
+        background: var(--card);
+        border: 2px solid var(--accent);
+        border-radius: 25px;
+        color: var(--text);
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        backdrop-filter: var(--blur);
+        box-shadow: var(--shadow-lg);
+        animation: refinementExitSlideUp 0.5s ease-out;
+        position: relative;
+      }
+
+      .refinement-exit-btn:hover {
+        background: var(--accent);
+        color: white;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 32px rgba(139, 92, 246, 0.3);
+      }
+
+      .exit-btn-text {
+        font-weight: 600;
+      }
+
+      .exit-btn-close {
+        font-size: 1.2rem;
+        font-weight: 300;
+        opacity: 0.7;
+        transition: opacity 0.2s ease;
+      }
+
+      .refinement-exit-btn:hover .exit-btn-close {
+        opacity: 1;
+      }
+
+      .refinement-close-btn {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 20px;
+        height: 20px;
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        opacity: 0.6;
+      }
+
+      .refinement-close-btn:hover {
+        background: var(--text-secondary);
+        color: var(--card);
+        border-radius: 6px;
+        opacity: 1;
+        transform: scale(1.1);
+      }
+
+      @keyframes refinementExitSlideUp {
+        from {
+          opacity: 0;
+          transform: translateX(-50%) translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+        }
+      }
+
+      /* Responsive adjustments for exit button */
+      @media (max-height: 600px) {
+        .refinement-exit-container {
+          bottom: -100px;
+        }
+        .hero-prompt-container {
+          bottom: -60px;
+        }
+        .refinement-exit-btn {
+          padding: 0.5rem 1rem;
+          font-size: 0.8rem;
+        }
+        .refinement-prompt-text {
+          font-size: 0.7rem;
+        }
+        .hero-prompt-text {
+          font-size: 0.8rem;
+        }
+      }
+
+      @media (max-height: 500px) {
+        .refinement-exit-container {
+          bottom: -80px;
+        }
+        .hero-prompt-container {
+          bottom: -50px;
+        }
       }
 
       /* Hero Refinements */

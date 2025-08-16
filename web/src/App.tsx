@@ -382,18 +382,20 @@ export default function App() {
   };
 
   const navigateHero = (direction: 'prev' | 'next') => {
-    if (!currentSession || currentSession.images.length === 0) return;
+    // Use heroSession images if we're in refinement mode, otherwise use currentSession
+    const activeSession = heroSession || currentSession;
+    if (!activeSession || activeSession.images.length === 0) return;
 
     let newIndex;
     if (direction === 'prev') {
-      newIndex = heroIndex > 0 ? heroIndex - 1 : currentSession.images.length - 1;
+      newIndex = heroIndex > 0 ? heroIndex - 1 : activeSession.images.length - 1;
     } else {
-      newIndex = heroIndex < currentSession.images.length - 1 ? heroIndex + 1 : 0;
+      newIndex = heroIndex < activeSession.images.length - 1 ? heroIndex + 1 : 0;
     }
 
     setHeroIndex(newIndex);
-    setHeroImage(currentSession.images[newIndex]);
-    setHeroSession(null); // Clear variations when navigating
+    setHeroImage(activeSession.images[newIndex]);
+    // Don't clear heroSession when navigating within refinement mode
   };
 
   const handleSuggest = () => {
@@ -415,6 +417,20 @@ export default function App() {
       setHeroSession(null);
     }
   }, []);
+
+  // Exit refinement mode and return to original batch
+  const exitRefinementMode = useCallback(() => {
+    if (!currentSession || !heroSession) return;
+
+    // Find the original image in the current session that matches the hero image prompt
+    const originalImage = currentSession.images.find(img => img.prompt === heroImage?.prompt);
+    if (originalImage) {
+      const originalIndex = currentSession.images.findIndex(img => img.id === originalImage.id);
+      setHeroIndex(originalIndex);
+      setHeroImage(originalImage);
+    }
+    setHeroSession(null);
+  }, [currentSession, heroSession, heroImage]);
 
   // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -455,13 +471,42 @@ export default function App() {
                 <div className="hero-loading-spinner"></div>
               </div>
             )}
-            <button
-              className="hero-close"
-              onClick={closeHeroMode}
-              aria-label="Close hero view"
-            >
-              ×
-            </button>
+            {/* Original hero prompt display with close button */}
+            {!heroSession && (
+              <div className="hero-prompt-container">
+                <div className="hero-prompt-text">
+                  <strong>{heroImage.prompt}</strong>
+                  <br />
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', opacity: 0.8 }}>
+                    Style: {selectedStyle}
+                  </span>
+                </div>
+                <button
+                  className="hero-prompt-close"
+                  onClick={closeHeroMode}
+                  aria-label="Close hero view"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            {/* Exit refinement mode button - positioned inside hero-center */}
+            {heroSession && !heroSession.generating && (
+              <div className="refinement-exit-container">
+                <div className="refinement-combined-container">
+                  <div className="refinement-combined-text">
+                    <strong>Add {heroSession.refinement.includes('Color') ? 'More Color' : heroSession.refinement.replace('More ', '')}</strong>
+                  </div>
+                  <button
+                    className="refinement-close-btn"
+                    onClick={exitRefinementMode}
+                    aria-label="Return to original hero"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
                     {/* Navigation arrows */}
@@ -482,7 +527,7 @@ export default function App() {
 
           {/* Image counter */}
           <div className="hero-counter">
-            {heroIndex + 1} / {currentSession?.images.length || 0}
+            {heroIndex + 1} / {(heroSession || currentSession)?.images.length || 0}
           </div>
 
           {/* Show either refinement options or generated variations */}
@@ -527,8 +572,10 @@ export default function App() {
                       '--delay': `${index * 0.1}s`
                     } as React.CSSProperties}
                     onClick={() => {
+                      const newIndex = heroSession.images.findIndex(img => img.id === image.id);
+                      setHeroIndex(newIndex);
                       setHeroImage(image);
-                      setHeroSession(null);
+                      // Keep heroSession active when clicking on refinement images
                     }}
                   >
                     <img
@@ -539,8 +586,6 @@ export default function App() {
                   </div>
                 );
               })}
-
-
             </div>
           )}
         </div>
