@@ -330,3 +330,4 @@ const trackRenderTime = (projectId) => {
 ```
 
 This guide provides a clear path for scaling your Sogni demo from its current clean state to a production-ready application while maintaining code quality and performance.
+

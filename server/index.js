@@ -22,13 +22,12 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { Readable } from 'node:stream';
-import { createServer } from 'node:net';
 
 const app = express();
 app.use(express.json({ limit: '8mb' }));
 
 /** Resolve allowed origins (comma-separated in CLIENT_ORIGIN) */
-const origins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173,http://localhost:5174,http://localhost:5175')
+const origins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
@@ -46,26 +45,7 @@ app.use(
 
 const PORT = process.env.PORT || 3001;
 
-// Helper function to check if a port is available
-function isPortAvailable(port) {
-  return new Promise((resolve) => {
-    const server = createServer();
-    server.listen(port, () => {
-      server.close(() => resolve(true));
-    });
-    server.on('error', () => resolve(false));
-  });
-}
 
-// Helper function to find an available port
-async function findAvailablePort(startPort = 3001) {
-  for (let port = startPort; port <= startPort + 10; port++) {
-    if (await isPortAvailable(port)) {
-      return port;
-    }
-  }
-  throw new Error(`No available ports found between ${startPort} and ${startPort + 10}`);
-}
 
 // Map of projectId -> Set<SSE response objects>
 const sseClients = new Map();
@@ -749,40 +729,11 @@ app.get('/api/health', (_, res) => {
   res.json({ ok: true, env: process.env.SOGNI_ENV || 'production' });
 });
 
-// Start server with automatic port selection
-async function startServer() {
-  let actualPort = PORT;
-
-  // If the preferred port is in use, find an available one
-  if (!(await isPortAvailable(PORT))) {
-    console.warn(`⚠️  Port ${PORT} is in use, finding an available port...`);
-    try {
-      actualPort = await findAvailablePort(PORT);
-      console.log(`✅ Found available port: ${actualPort}`);
-    } catch (err) {
-      console.error(`❌ ${err.message}`);
-      process.exit(1);
-    }
-  }
-
-  const server = app.listen(actualPort, () => {
-    console.log(`🚀 Sogni tattoo ideas API running on http://localhost:${actualPort}`);
-    console.log(`🔒 Allowed CORS origins: ${origins.join(', ')}`);
-    if (actualPort !== PORT) {
-      console.log(`📝 Note: Using port ${actualPort} instead of ${PORT}`);
-    }
-  });
-
-  server.on('error', (err) => {
-    console.error('❌ Server error:', err);
-    process.exit(1);
-  });
-
-  return server;
-}
-
 // Start the server
-const server = await startServer();
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Sogni tattoo ideas API running on http://localhost:${PORT}`);
+  console.log(`🔒 Allowed CORS origins: ${origins.join(', ')}`);
+});
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
