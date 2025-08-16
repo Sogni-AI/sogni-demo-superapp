@@ -1,116 +1,163 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 
 /**
- * Teaching-friendly “Tattoo Idea Generator”
- * - Compose prompts from UX inputs (no LLM required)
- * - Click "Generate Sample" to render via Sogni through a tiny Express backend
- *
- * Notes on env:
- * - DEV: Vite proxies /api to http://localhost:3001 (vite.config.ts)
- * - PROD (or custom): set VITE_API_BASE_URL in web/.env(.production) and we'll call that.
+ * Award-winning Tattoo Brainstorming App
+ * - Streamlined UX: single input → 16 instant variations
+ * - "More like this" refinement system for iterative exploration
+ * - Beautiful masonry grid with streaming animations
+ * - Hero view with directional refinement options
  */
 const API_BASE = import.meta.env.VITE_API_BASE_URL ? String(import.meta.env.VITE_API_BASE_URL).replace(/\/+$/,'') : '';
 
-const STYLES = [
-  'Japanese Irezumi', 'American Traditional', 'Neo-Traditional',
-  'Blackwork', 'Geometric', 'Realism', 'Watercolor', 'Minimalist'
+const BASE_STYLES = [
+  'Japanese Irezumi', 'American Traditional', 'Neo-Traditional', 'New School',
+  'Blackwork', 'Geometric', 'Sacred Geometry', 'Mandala',
+  'Realism', 'Hyperrealism', 'Portrait', 'Photorealism',
+  'Watercolor', 'Abstract Watercolor', 'Splash Watercolor',
+  'Minimalist', 'Fine Line', 'Single Needle', 'Micro Realism',
+  'Dotwork', 'Stippling', 'Pointillism',
+  'Tribal', 'Polynesian', 'Maori', 'Celtic',
+  'Biomechanical', 'Cyberpunk', 'Steampunk',
+  'Surreal', 'Abstract', 'Psychedelic',
+  'Ornamental', 'Filigree', 'Art Nouveau', 'Art Deco',
+  'Sketch Style', 'Pencil Drawing', 'Charcoal',
+  'Trash Polka', 'Collage Style', 'Mixed Media',
+  'Blackout', 'Solid Black', 'Negative Space',
+  'Lettering', 'Script', 'Gothic Lettering', 'Typography',
+  'Horror', 'Dark Art', 'Gothic Style',
+  'Nature', 'Botanical', 'Floral',
+  'Religious', 'Spiritual', 'Mythology'
 ];
 
-const PLACEMENTS = [
-  'Forearm', 'Upper Arm', 'Sleeve', 'Chest', 'Back', 'Thigh', 'Calf', 'Ankle', 'Neck', 'Behind Ear'
+// Shuffle function
+const shuffleArray = <T,>(array: T[]): T[] => {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
+// Create randomized styles array
+const STYLES = shuffleArray(BASE_STYLES);
+
+const HERO_REFINEMENT_OPTIONS = [
+  { label: 'More Realistic', value: 'photorealistic, detailed shading, lifelike rendering', lockSeed: true },
+  { label: 'More Geometric', value: 'geometric patterns, angular shapes, precise lines', lockSeed: true },
+  { label: 'More Organic', value: 'flowing curves, natural forms, soft edges', lockSeed: true },
+  { label: 'More Color', value: 'vibrant colors, rich palette, colorful design', lockSeed: true },
+  { label: 'More Traditional', value: 'classic tattoo style, bold outlines, traditional approach', lockSeed: true },
+  { label: 'More Minimal', value: 'clean design, negative space, simple forms', lockSeed: true },
+  { label: 'More Detailed', value: 'intricate elements, complex textures, rich detail', lockSeed: true },
+  { label: 'More Abstract', value: 'abstract interpretation, artistic expression, creative style', lockSeed: true },
+  { label: 'More Bold', value: 'strong outlines, high contrast, dramatic impact', lockSeed: true },
+  { label: 'More Delicate', value: 'fine lines, subtle details, gentle approach', lockSeed: true },
+  { label: 'More Dark', value: 'deep shadows, black ink, moody atmosphere', lockSeed: true },
+  { label: 'More Ornate', value: 'decorative elements, ornamental design, elaborate details', lockSeed: true },
+  { label: 'More Stylized', value: 'artistic interpretation, unique style, creative approach', lockSeed: true },
+  { label: 'More Dynamic', value: 'movement, energy, dynamic composition', lockSeed: true },
+  { label: 'More Textured', value: 'rich textures, surface details, tactile quality', lockSeed: true },
+  { label: 'More Variations', value: 'same concept, different interpretation', lockSeed: false }
 ];
 
-type Idea = {
+const TATTOO_SUGGESTIONS = [
+  'geometric wolf', 'japanese dragon', 'minimalist mountain range', 'watercolor phoenix',
+  'sacred geometry mandala', 'fine line rose', 'tribal sun', 'realistic tiger portrait',
+  'abstract tree of life', 'celtic knot', 'biomechanical arm piece', 'dotwork lotus',
+  'neo-traditional snake', 'blackwork raven', 'ornamental compass', 'floral sleeve design',
+  'skull and roses', 'geometric lion', 'watercolor galaxy', 'minimalist wave',
+  'traditional anchor', 'realistic eye', 'abstract mountain', 'fine line constellation',
+  'tribal elephant', 'geometric butterfly', 'japanese koi fish', 'watercolor feather',
+  'blackwork forest', 'ornamental key', 'realistic wolf pack', 'minimalist arrow',
+  'sacred geometry owl', 'neo-traditional lighthouse', 'dotwork elephant', 'floral mandala',
+  'geometric stag', 'watercolor hummingbird', 'blackwork octopus', 'fine line moon phases',
+  'tribal phoenix', 'realistic lion portrait', 'abstract waves', 'ornamental dagger',
+  'minimalist birds in flight', 'geometric fox', 'japanese cherry blossoms', 'watercolor jellyfish'
+];
+
+type TattooImage = {
   id: string;
-  title: string;
+  url: string;
   prompt: string;
-  generating?: boolean;
-  progress?: number;          // 0..100
-  previews?: string[];        // preview urls (if emitted)
-  images?: string[];          // final result urls
-  sse?: EventSource | null;   // live stream connection
+  loadTime: number;
+  aspectRatio?: number;
+};
+
+type GenerationSession = {
+  id: string;
+  basePrompt: string;
+  style: string;
+  refinement: string;
+  images: TattooImage[];
+  generating: boolean;
+  progress: number;
+  sse?: EventSource | null;
   error?: string | null;
+  seed?: number;
 };
 
 export default function App() {
-  // Form state
-  const [subject, setSubject] = useState('koi fish');
-  const [style, setStyle] = useState(STYLES[0]);
-  const [placement, setPlacement] = useState(PLACEMENTS[0]);
-  const [size, setSize] = useState('medium'); // small / medium / large
-  const [color, setColor] = useState<'color'|'black & grey'>('black & grey');
-  const [mood, setMood] = useState('bold, timeless');
-  const [extras, setExtras] = useState('fine line details, great composition');
-  const [numIdeas, setNumIdeas] = useState(4);
-  const [numImages, setNumImages] = useState(1);
+  // Core app state - randomize initial values
+  const [prompt, setPrompt] = useState(() => {
+    const randomSuggestion = TATTOO_SUGGESTIONS[Math.floor(Math.random() * TATTOO_SUGGESTIONS.length)];
+    return randomSuggestion;
+  });
+  const [selectedStyle, setSelectedStyle] = useState(() => {
+    const randomStyle = STYLES[Math.floor(Math.random() * STYLES.length)];
+    return randomStyle;
+  });
+    const [currentSession, setCurrentSession] = useState<GenerationSession | null>(null);
+  const [heroImage, setHeroImage] = useState<TattooImage | null>(null);
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [heroSession, setHeroSession] = useState<GenerationSession | null>(null); // For variations in hero mode
+  const [sessionHistory, setSessionHistory] = useState<GenerationSession[]>([]);
 
-  const [ideas, setIdeas] = useState<Idea[]>([]);
   const liveRegionRef = useRef<HTMLDivElement>(null);
+  const sessionCounter = useRef(0);
+  const imageCounter = useRef(0);
 
-  // Simple deterministic IDs
-  const counter = useRef(0);
-  const nextId = () => `idea_${++counter.current}`;
+  const nextSessionId = () => `session_${++sessionCounter.current}`;
+  const nextImageId = () => `image_${++imageCounter.current}`;
 
-  // Compose a single prompt string from the current form values.
-  const basePrompt = useMemo(() => {
-    return [
-      `tattoo concept of ${subject}`,
-      `style: ${style}`,
-      `placement: ${placement}`,
-      `size: ${size}`,
-      `palette: ${color}`,
-      `mood: ${mood}`,
-      extras ? `notes: ${extras}` : ''
-    ].filter(Boolean).join(', ');
-  }, [subject, style, placement, size, color, mood, extras]);
-
-  function generateIdeas() {
-    const angles = [
-      'close-up focal composition',
-      'dynamic perspective with flow following muscle lines',
-      'balanced negative space for readability',
-      'ornamental frame elements that match placement'
-    ];
-
-    const created: Idea[] = Array.from({ length: Math.max(1, Math.min(12, numIdeas)) }).map((_, i) => {
-      const id = nextId();
-      const title = `${style} • ${subject} on ${placement} (${size})`;
-      const flavor = angles[i % angles.length];
-
-      const prompt = `${basePrompt}, ${flavor}. High-res concept sheet, clean background, design clarity.`;
-      return { id, title, prompt, previews: [], images: [] };
-    });
-
-    setIdeas(created);
-    announce(`${created.length} design idea${created.length === 1 ? '' : 's'} generated`);
-  }
-
-  function announce(message: string) {
-    // Accessibility: announce status changes to screen readers
+  const announce = useCallback((message: string) => {
     if (liveRegionRef.current) {
       liveRegionRef.current.textContent = message;
-      setTimeout(() => { if (liveRegionRef.current) liveRegionRef.current.textContent = ''; }, 600);
+      setTimeout(() => {
+        if (liveRegionRef.current) liveRegionRef.current.textContent = '';
+      }, 600);
     }
-  }
+  }, []);
 
-  async function startRender(idea: Idea) {
-    idea.sse?.close();
+  const startHeroGeneration = useCallback(async (basePrompt: string, style: string, refinement: string, seed?: number) => {
+    // Close any existing SSE connection
+    heroSession?.sse?.close();
 
-    setIdeas(prev => prev.map(i =>
-      i.id === idea.id ? { ...i, generating: true, progress: 0, previews: [], images: [], error: null } : i
-    ));
+    const sessionId = nextSessionId();
+    const newSession: GenerationSession = {
+      id: sessionId,
+      basePrompt,
+      style,
+      refinement,
+      images: [],
+      generating: true,
+      progress: 0,
+      error: null,
+      seed
+    };
+
+    setHeroSession(newSession);
+    announce('Generating 16 variations...');
 
     try {
       const resp = await fetch(`${API_BASE}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: idea.prompt,
-          width: 1024,
-          height: 1024,
-          numImages: Math.max(1, Math.min(4, numImages)),
-          modelId: 'flux1-schnell-fp8',
-          guidance: 3
+          prompt: basePrompt,
+          style,
+          refinement,
+          seed: seed !== undefined ? seed : undefined
         })
       });
 
@@ -123,250 +170,483 @@ export default function App() {
 
       // Listen to SSE events for this project
       const es = new EventSource(`${API_BASE}/api/progress/${projectId}`);
-      const close = () => { try { es.close(); } catch {} };
 
       es.onmessage = (evt) => {
         let data;
         try {
           data = JSON.parse(evt.data);
-          console.log('[SSE]', data); // Debug logging
         } catch (err) {
           console.error('[SSE] Invalid JSON:', evt.data);
           return;
         }
 
-        setIdeas(prev => prev.map(i => {
-          if (i.id !== idea.id) return i;
+        setHeroSession(prev => {
+          if (!prev || prev.id !== sessionId) return prev;
 
           if (data.type === 'connected') {
-            announce('render connected');
-            return i;
-          }
-          if (data.type === 'progress') {
-            return { ...i, progress: Number(data.progress) || 0 };
-          }
-          if (data.type === 'preview' && data.url) {
-            const previews = Array.from(new Set([...(i.previews || []), data.url]));
-            return { ...i, previews };
-          }
-          if (data.type === 'jobCompleted' && data.job?.resultUrl) {
-            console.log('[SSE] Got jobCompleted with resultUrl:', data.job.resultUrl);
-            const images = Array.from(new Set([...(i.images || []), data.job.resultUrl]));
-            return { ...i, images, progress: 100 };
-          }
-          // Also handle legacy event formats for compatibility
-          if (data.type === 'final' && data.url) {
-            console.log('[SSE] Got final with url:', data.url);
-            const images = Array.from(new Set([...(i.images || []), data.url]));
-            return { ...i, images, progress: 100 };
-          }
-          if (data.type === 'result' && data.url) {
-            console.log('[SSE] Got result with url:', data.url);
-            const images = Array.from(new Set([...(i.images || []), data.url]));
-            return { ...i, images, progress: 100 };
-          }
-          if (data.type === 'results' && data.urls) {
-            console.log('[SSE] Got results with urls:', data.urls);
-            const images = Array.from(new Set([...(i.images || []), ...data.urls]));
-            return { ...i, images, progress: 100 };
-          }
-          if (data.type === 'completed') {
-            close();
-            announce('render completed');
-            return { ...i, generating: false, sse: null, progress: 100 };
-          }
-          if (data.type === 'error' || data.type === 'jobFailed') {
-            close();
-            announce('render failed');
-            const errorMsg = data.error || data.message || data.job?.error || 'Render failed';
-            return { ...i, generating: false, sse: null, error: errorMsg };
+            return prev;
           }
 
-          return i;
-        }));
+          if (data.type === 'progress') {
+            return { ...prev, progress: Number(data.progress) || 0 };
+          }
+
+          if (data.type === 'jobCompleted' && data.job?.resultUrl) {
+            const newImage: TattooImage = {
+              id: nextImageId(),
+              url: data.job.resultUrl,
+              prompt: data.job.positivePrompt || basePrompt,
+              loadTime: Date.now()
+            };
+
+            const updatedImages = [...prev.images, newImage];
+            announce(`${updatedImages.length} of 16 variations ready`);
+
+            return { ...prev, images: updatedImages };
+          }
+
+          if (data.type === 'completed') {
+            es.close();
+            announce('All 16 variations complete!');
+            return { ...prev, generating: false, sse: null };
+          }
+
+          if (data.type === 'error' || data.type === 'jobFailed') {
+            es.close();
+            announce('Generation failed');
+            return { ...prev, generating: false, sse: null, error: data.error || 'Generation failed' };
+          }
+
+          return prev;
+        });
       };
 
       es.onerror = () => {
-        close();
-        setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, generating: false, sse: null, error: 'Stream error' } : i));
+        es.close();
+        setHeroSession(prev => prev ? { ...prev, generating: false, sse: null, error: 'Connection error' } : null);
       };
 
-      setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, sse: es } : i));
+      setHeroSession(prev => prev ? { ...prev, sse: es } : null);
     } catch (err: any) {
-      setIdeas(prev => prev.map(i => i.id === idea.id ? { ...i, generating: false, error: err?.message || 'Failed to start render' } : i));
+      setHeroSession(prev => prev ? { ...prev, generating: false, error: err?.message || 'Failed to start generation' } : null);
     }
-  }
+  }, [heroSession?.sse, announce]);
 
-  return (
-    <>
+  const startGeneration = useCallback(async (basePrompt: string, style: string, refinement = '') => {
+    // Close any existing SSE connection
+    currentSession?.sse?.close();
+
+    const sessionId = nextSessionId();
+    // Generate a random seed for this session
+    const sessionSeed = Math.floor(Math.random() * 1000000);
+
+    const newSession: GenerationSession = {
+      id: sessionId,
+      basePrompt,
+      style,
+      refinement,
+      images: [],
+      generating: true,
+      progress: 0,
+      error: null,
+      seed: sessionSeed
+    };
+
+    setCurrentSession(newSession);
+    setHeroImage(null);
+    announce('Generating 16 tattoo variations...');
+
+    try {
+      const resp = await fetch(`${API_BASE}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: basePrompt,
+          style,
+          refinement
+        })
+      });
+
+      if (!resp.ok) {
+        const payload = await resp.json().catch(() => ({}));
+        throw new Error(payload?.error || `HTTP ${resp.status}`);
+      }
+
+      const { projectId } = await resp.json();
+
+      // Listen to SSE events for this project
+      const es = new EventSource(`${API_BASE}/api/progress/${projectId}`);
+
+      es.onmessage = (evt) => {
+        let data;
+        try {
+          data = JSON.parse(evt.data);
+        } catch (err) {
+          console.error('[SSE] Invalid JSON:', evt.data);
+          return;
+        }
+
+        setCurrentSession(prev => {
+          if (!prev || prev.id !== sessionId) return prev;
+
+          if (data.type === 'connected') {
+            return prev;
+          }
+
+          if (data.type === 'progress') {
+            return { ...prev, progress: Number(data.progress) || 0 };
+          }
+
+          if (data.type === 'jobCompleted' && data.job?.resultUrl) {
+            const newImage: TattooImage = {
+              id: nextImageId(),
+              url: data.job.resultUrl,
+              prompt: data.job.positivePrompt || basePrompt,
+              loadTime: Date.now()
+            };
+
+            const updatedImages = [...prev.images, newImage];
+            announce(`${updatedImages.length} of 16 tattoos ready`);
+
+            return { ...prev, images: updatedImages };
+          }
+
+          if (data.type === 'completed') {
+            es.close();
+            announce('All 16 variations complete!');
+
+            // Add to history
+            setSessionHistory(history => [prev, ...history.slice(0, 9)]); // Keep last 10 sessions
+
+            return { ...prev, generating: false, sse: null };
+          }
+
+          if (data.type === 'error' || data.type === 'jobFailed') {
+            es.close();
+            announce('Generation failed');
+            return { ...prev, generating: false, sse: null, error: data.error || 'Generation failed' };
+          }
+
+          return prev;
+        });
+      };
+
+      es.onerror = () => {
+        es.close();
+        setCurrentSession(prev => prev ? { ...prev, generating: false, sse: null, error: 'Connection error' } : null);
+      };
+
+      setCurrentSession(prev => prev ? { ...prev, sse: es } : null);
+    } catch (err: any) {
+      setCurrentSession(prev => prev ? { ...prev, generating: false, error: err?.message || 'Failed to start generation' } : null);
+    }
+  }, [currentSession?.sse, announce]);
+
+  const handleGenerate = () => {
+    if (prompt.trim()) {
+      startGeneration(prompt.trim(), selectedStyle);
+    }
+  };
+
+  const handleRefinementClick = (option: typeof HERO_REFINEMENT_OPTIONS[0]) => {
+    if (!heroImage || !currentSession) return;
+
+    const seed = option.lockSeed ? currentSession.seed : -1; // -1 for random seed
+    startHeroGeneration(heroImage.prompt, selectedStyle, option.value, seed);
+  };
+
+  const handleImageClick = (image: TattooImage) => {
+    if (!currentSession) return;
+
+    const index = currentSession.images.findIndex(img => img.id === image.id);
+
+    // Get the clicked image element for smooth transition
+    const clickedImage = document.querySelector(`[data-image-index="${index}"]`) as HTMLElement;
+    if (clickedImage) {
+      // Add a smooth scale-up animation to the clicked image
+      clickedImage.style.transform = 'scale(1.2)';
+      clickedImage.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+      clickedImage.style.zIndex = '500';
+
+      // Slight delay before showing hero mode for smoother transition
+      setTimeout(() => {
+        setHeroImage(image);
+        setHeroIndex(index);
+        setHeroSession(null); // Clear any previous hero session
+      }, 200);
+    } else {
+      setHeroImage(image);
+      setHeroIndex(index);
+      setHeroSession(null);
+    }
+  };
+
+  const navigateHero = (direction: 'prev' | 'next') => {
+    if (!currentSession || currentSession.images.length === 0) return;
+
+    let newIndex;
+    if (direction === 'prev') {
+      newIndex = heroIndex > 0 ? heroIndex - 1 : currentSession.images.length - 1;
+    } else {
+      newIndex = heroIndex < currentSession.images.length - 1 ? heroIndex + 1 : 0;
+    }
+
+    setHeroIndex(newIndex);
+    setHeroImage(currentSession.images[newIndex]);
+    setHeroSession(null); // Clear variations when navigating
+  };
+
+  const handleSuggest = () => {
+    const randomSuggestion = TATTOO_SUGGESTIONS[Math.floor(Math.random() * TATTOO_SUGGESTIONS.length)];
+    setPrompt(randomSuggestion);
+  };
+
+  // Handle smooth hero mode exit
+  const closeHeroMode = useCallback(() => {
+    const heroElement = document.querySelector('.hero-mode') as HTMLElement;
+    if (heroElement) {
+      heroElement.style.animation = 'heroFadeOut 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards';
+      setTimeout(() => {
+        setHeroImage(null);
+        setHeroSession(null);
+      }, 600);
+    } else {
+      setHeroImage(null);
+      setHeroSession(null);
+    }
+  }, []);
+
+  // Handle keyboard shortcuts
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      handleGenerate();
+    }
+    if (e.key === 'Escape' && heroImage) {
+      closeHeroMode();
+    }
+    if (heroImage && e.key === 'ArrowLeft') {
+      e.preventDefault();
+      navigateHero('prev');
+    }
+    if (heroImage && e.key === 'ArrowRight') {
+      e.preventDefault();
+      navigateHero('next');
+    }
+  };
+
+    return (
+    <div className="app" onKeyDown={handleKeyDown}>
       {/* Live region for screen reader announcements */}
-      <div aria-live="polite" aria-atomic="true" className="subtle" style={{ position: 'absolute', clip: 'rect(0 0 0 0)' }} ref={liveRegionRef} />
+      <div aria-live="polite" aria-atomic="true" className="sr-only" ref={liveRegionRef} />
 
-      <div className="grid">
-        {/* Left: form & prompt */}
-        <section className="card">
-          <h2 style={{ margin: '4px 0 10px' }}>Describe your tattoo</h2>
-          <p className="subtle" style={{ marginTop: 0 }}>
-            Keep it simple. You can always refine once you see the first samples.
-          </p>
-
-          <div className="row two" style={{ marginTop: 10 }}>
-            <label>
-              Subject
-              <input
-                value={subject}
-                onChange={e => setSubject(e.target.value)}
-                placeholder="e.g., koi fish, skull, peony"
-              />
-            </label>
-
-            <label>
-              Style
-              <select value={style} onChange={e => setStyle(e.target.value)}>
-                {STYLES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </label>
-          </div>
-
-          <div className="row three" style={{ marginTop: 10 }}>
-            <label>
-              Placement
-              <select value={placement} onChange={e => setPlacement(e.target.value)}>
-                {PLACEMENTS.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </label>
-
-            <label>
-              Size
-              <select value={size} onChange={e => setSize(e.target.value)}>
-                {['small', 'medium', 'large'].map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </label>
-
-            <label>
-              Palette
-              <select value={color} onChange={e => setColor(e.target.value as any)}>
-                <option>black & grey</option>
-                <option>color</option>
-              </select>
-            </label>
-          </div>
-
-          <div className="row two" style={{ marginTop: 10 }}>
-            <label>
-              Mood
-              <input value={mood} onChange={e => setMood(e.target.value)} placeholder="e.g., bold, timeless" />
-            </label>
-
-            <label>
-              Extras
-              <input value={extras} onChange={e => setExtras(e.target.value)} placeholder="e.g., fine line details" />
-            </label>
-          </div>
-
-          <div className="row two" style={{ marginTop: 10 }}>
-            <label>
-              Ideas
-              <input type="number" min={1} max={12} value={numIdeas} onChange={e => setNumIdeas(Number(e.target.value || 1))} />
-            </label>
-            <label>
-              Images / idea
-              <input type="number" min={1} max={4} value={numImages} onChange={e => setNumImages(Number(e.target.value || 1))} />
-            </label>
-          </div>
-
-          <div className="actions" style={{ marginTop: 12 }}>
-            <button className="btn" onClick={() => {
-              setSubject('koi fish'); setStyle('Japanese Irezumi'); setPlacement('Forearm');
-              setSize('medium'); setColor('black & grey'); setMood('bold, timeless'); setExtras('fine line details, great composition');
-            }}>Reset</button>
-            <button className="btn primary" onClick={generateIdeas}>Make Ideas</button>
-          </div>
-
-          <div style={{ marginTop: 14 }}>
-            <div className="subtle">Prompt preview</div>
-            <div className="card mono" style={{ marginTop: 6 }}>{basePrompt}</div>
-          </div>
-        </section>
-
-        {/* Right: tips / usage */}
-        <aside className="card">
-          <h3 style={{ margin: '4px 0 8px' }}>How it works</h3>
-          <ol className="subtle" style={{ lineHeight: 1.5, paddingLeft: 18 }}>
-            <li>Describe your idea. We build a clean prompt from your inputs.</li>
-            <li>Click <strong>Make Ideas</strong> to create several variants.</li>
-            <li>Pick one and hit <strong>Generate Sample</strong> to render via Sogni.</li>
-          </ol>
-
-          <div className="card" style={{ marginTop: 14 }}>
-            <div className="subtle">Tips</div>
-            <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
-              <li>Use clear subjects (e.g., “peony”, “phoenix”, “snake + dagger”).</li>
-              <li>Style guides the line weight and shading language.</li>
-              <li>Placement & size influence silhouette and flow.</li>
-            </ul>
-          </div>
-
-          <div className="card" style={{ marginTop: 14 }}>
-            <div className="subtle">Shortcuts</div>
-            <p className="subtle" style={{ marginTop: 6 }}>
-              Press <span className="kbd">Tab</span> to jump fields quickly.
-            </p>
-          </div>
-        </aside>
-      </div>
-
-      {!!ideas.length && (
-        <section className="card" style={{ marginTop: 16 }}>
-          <h2 style={{ margin: '4px 0 8px' }}>Ideas</h2>
-          <div className="ideas" style={{ marginTop: 8 }}>
-            {ideas.map(idea => (
-              <div key={idea.id} className="card" style={{ display: 'grid', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <strong>{idea.title}</strong>
-                  {idea.error && <span className="subtle" style={{ color: '#ff7b7b' }}>{idea.error}</span>}
-                </div>
-                <div className="mono">{idea.prompt}</div>
-                <div className="actions">
-                  <button
-                    className="btn primary"
-                    disabled={!!idea.generating}
-                    aria-busy={idea.generating}
-                    onClick={() => startRender(idea)}
-                  >
-                    {idea.generating ? 'Rendering…' : 'Generate Sample'}
-                  </button>
-                </div>
-                <div className="progress" aria-hidden={!idea.generating}>
-                  <div className="bar" style={{ width: `${idea.progress || 0}%` }} />
-                </div>
-
-                {!!idea.previews?.length && (
-                  <>
-                    <div className="subtle">Previews</div>
-                    <div className="img-grid">
-                      {idea.previews.map((u, i) => <img key={u + i} src={u} alt="tattoo preview" loading="lazy" />)}
-                    </div>
-                  </>
-                )}
-                {!!idea.images?.length && (
-                  <>
-                    <div className="subtle">Final</div>
-                    <div className="img-grid">
-                      {idea.images.map((u, i) => <img key={u + i} src={u} alt="final tattoo concept" loading="lazy" />)}
-                    </div>
-                  </>
-                )}
+      {/* Hero Mode */}
+      {heroImage && (
+        <div className="hero-mode">
+          {/* Central Hero Image */}
+          <div className="hero-center">
+            <img
+              src={heroImage.url}
+              alt="Selected tattoo design"
+              className="hero-main-image"
+            />
+            {/* Loading indicator when generating variations */}
+            {heroSession?.generating && (
+              <div className="hero-loading">
+                <div className="hero-loading-spinner"></div>
               </div>
-            ))}
+            )}
+            <button
+              className="hero-close"
+              onClick={closeHeroMode}
+              aria-label="Close hero view"
+            >
+              ×
+            </button>
           </div>
-        </section>
+
+                    {/* Navigation arrows */}
+          <button
+            className="hero-nav hero-nav-left"
+            onClick={() => navigateHero('prev')}
+            aria-label="Previous image"
+          >
+            ←
+          </button>
+          <button
+            className="hero-nav hero-nav-right"
+            onClick={() => navigateHero('next')}
+            aria-label="Next image"
+          >
+            →
+          </button>
+
+          {/* Image counter */}
+          <div className="hero-counter">
+            {heroIndex + 1} / {currentSession?.images.length || 0}
+          </div>
+
+          {/* Show either refinement options or generated variations */}
+          {!heroSession ? (
+            /* Refinement Options Grid */
+            <div className="hero-options-grid">
+              {HERO_REFINEMENT_OPTIONS.map((option, index) => {
+                const angle = (index * 360) / 16;
+                // Generate rainbow colors across the full spectrum
+                const hue = (index * 360) / HERO_REFINEMENT_OPTIONS.length;
+                const rainbowColor = `hsl(${hue}, 70%, 60%)`;
+                const rainbowColorHover = `hsl(${hue}, 80%, 50%)`;
+
+                return (
+                  <div
+                    key={option.label}
+                    className="hero-option"
+                    style={{
+                      '--angle': `${angle}deg`,
+                      '--delay': `${index * 0.05}s`,
+                      '--rainbow-color': rainbowColor,
+                      '--rainbow-color-hover': rainbowColorHover
+                    } as React.CSSProperties}
+                    onClick={() => handleRefinementClick(option)}
+                  >
+                    <span className="option-label">{option.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Generated Variations Orbit */
+            <div className="orbit-container">
+              {heroSession.images.map((image, index) => {
+                const angle = (index * 360) / 16;
+                return (
+                  <div
+                    key={image.id}
+                    className="orbit-image"
+                    style={{
+                      '--angle': `${angle}deg`,
+                      '--delay': `${index * 0.1}s`
+                    } as React.CSSProperties}
+                    onClick={() => {
+                      setHeroImage(image);
+                      setHeroSession(null);
+                    }}
+                  >
+                    <img
+                      src={image.url}
+                      alt={`Variation ${index + 1}`}
+                      className="orbit-img"
+                    />
+                  </div>
+                );
+              })}
+
+
+            </div>
+          )}
+        </div>
       )}
 
-      <footer>
-        Built with a minimal Express + Sogni backend and a tiny React frontend.
-        Set <span className="kbd">VITE_API_BASE_URL</span> if your API lives on another origin.
-      </footer>
-    </>
+      {/* Main Mode - Circular Layout */}
+      {!heroImage && (
+        <div className="main-mode">
+                    {/* Central Input Area */}
+          <div className="center-input">
+            <img
+              src="/slothi.png"
+              alt="Slothicorn mascot"
+              className="mascot"
+            />
+            <div className="brand">
+              <h1>Sogni Tattoo Flash Generator</h1>
+            </div>
+
+            <div className="input-controls">
+              <div className="input-group">
+                <input
+                  type="text"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Describe your tattoo idea..."
+                  className="prompt-input"
+                  disabled={currentSession?.generating}
+                />
+                <button
+                  onClick={handleSuggest}
+                  className="suggest-btn"
+                  disabled={currentSession?.generating}
+                  title="Get a random suggestion"
+                >
+                  ✨
+                </button>
+              </div>
+
+              <select
+                value={selectedStyle}
+                onChange={(e) => setSelectedStyle(e.target.value)}
+                className="style-select"
+                disabled={currentSession?.generating}
+              >
+                {STYLES.map(style => (
+                  <option key={style} value={style}>{style}</option>
+                ))}
+              </select>
+
+                                <button
+                    onClick={handleGenerate}
+                    disabled={!prompt.trim() || currentSession?.generating}
+                    className="generate-btn"
+                  >
+                    {currentSession?.generating ? (
+                      <>
+                        <div className="button-spinner"></div>
+                        Creating...
+                      </>
+                    ) : (
+                      'Generate'
+                    )}
+                  </button>
+                </div>
+
+
+
+            {/* Error Display */}
+            {currentSession?.error && (
+              <div className="error-message">
+                {currentSession.error}
+              </div>
+            )}
+          </div>
+
+          {/* Circular Image Layout */}
+          {currentSession && (
+            <div className="circle-container">
+              {currentSession.images.map((image, index) => {
+                const angle = (index * 360) / 16;
+                return (
+                  <div
+                    key={image.id}
+                    className="circle-image"
+                    style={{
+                      '--angle': `${angle}deg`,
+                      '--delay': `${index * 0.1}s`
+                    } as React.CSSProperties}
+                    onClick={() => handleImageClick(image)}
+                  >
+                    <img
+                      src={image.url}
+                      alt={`Tattoo concept ${index + 1}`}
+                      className="circle-img"
+                      data-image-index={index}
+                    />
+                  </div>
+                );
+              })}
+
+
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -162,10 +162,10 @@ const RENDER_DEFAULTS = {
   steps: 4,
   guidance: 1,
   scheduler: 'Euler',
-  timeStepSpacing: 'Linear',
+  timeStepSpacing: 'Simple',
   sizePreset: 'custom',
-  width: 512,
-  height: 512,
+  width: 768,
+  height: 768,
   tokenType: 'spark' // <- charge Spark points instead of SOGNI (defaults to SOGNI if omitted)
   // Ref: ProjectParams.tokenType; defaults to SOGNI if unspecified
   // https://sdk-docs.sogni.ai/interfaces/ProjectParams.html
@@ -299,6 +299,80 @@ async function collectProjectResultUrls(project) {
 }
 
 /**
+ * Generate 16 diverse prompt variations optimized for Flux Schnell
+ * Flux Schnell prefers: clear subject, style descriptors, quality terms, concise language
+ */
+function generatePromptVariations(basePrompt, style = '', refinement = '') {
+  // Flux Schnell responds well to these composition styles
+  const compositions = [
+    'centered composition',
+    'dynamic asymmetrical layout',
+    'flowing organic curves',
+    'precise geometric forms',
+    'balanced negative space',
+    'bold central focus',
+    'delicate line work',
+    'strong silhouette',
+    'detailed close-up',
+    'minimalist design',
+    'ornate decorative style',
+    'abstract interpretation',
+    'realistic rendering',
+    'stylized artwork',
+    'traditional approach',
+    'contemporary style'
+  ];
+
+  // Flux Schnell quality and mood descriptors that work well
+  const qualityTerms = [
+    'high detail, sharp lines',
+    'professional artwork, clean design',
+    'bold contrast, dramatic',
+    'soft shading, elegant',
+    'intricate details, refined',
+    'smooth gradients, polished',
+    'crisp edges, precise',
+    'rich textures, depth',
+    'clean linework, professional',
+    'artistic quality, expressive',
+    'fine craftsmanship, detailed',
+    'modern aesthetic, sleek',
+    'timeless design, classic',
+    'creative interpretation, unique',
+    'masterful execution, skilled',
+    'premium quality, exceptional'
+  ];
+
+  const variations = [];
+  for (let i = 0; i < 16; i++) {
+    const composition = compositions[i];
+    const quality = qualityTerms[i];
+
+    // Flux Schnell optimal prompt structure: subject, style, composition, quality
+    let prompt = basePrompt;
+
+    if (style) {
+      prompt += `, ${style.toLowerCase()} tattoo`;
+    } else {
+      prompt += ' tattoo';
+    }
+
+    if (refinement) {
+      prompt += `, ${refinement}`;
+    }
+
+    prompt += `, ${composition}, ${quality}`;
+
+    // Flux Schnell responds well to these ending terms
+    prompt += ', tattoo design, black ink on white background';
+
+    variations.push(prompt);
+  }
+
+  return variations;
+}
+
+/**
  * Emit SDK-like job lifecycle events (and legacy aliases for compatibility).
  */
 function emitJobLifecycle(project, jobIndexById, evt) {
@@ -355,11 +429,12 @@ function emitJobLifecycle(project, jobIndexById, evt) {
 // ---------- Routes ----------
 
 /**
- * Start a render
+ * Start a render - always generates 16 tattoo variations
  * Body: {
- *   prompt: string,            // required
- *   style?: string,            // optional; becomes stylePrompt
- *   numImages?: number,        // optional; default 1
+ *   prompt: string,            // required base prompt
+ *   style?: string,            // optional style modifier
+ *   refinement?: string,       // optional refinement direction (e.g., "more geometric", "darker shading")
+ *   baseImageUrl?: string,     // optional - for "more like this" generations
  *   seed?: number              // optional
  * }
  */
@@ -368,9 +443,12 @@ app.post('/api/generate', async (req, res) => {
     const {
       prompt,
       style = '',
-      numImages = 1,
+      refinement = '',
+      baseImageUrl = '',
       seed
     } = req.body || {};
+
+    console.log('[Generate] Received request:', { prompt, style, refinement, seed });
 
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Missing prompt' });
@@ -378,15 +456,18 @@ app.post('/api/generate', async (req, res) => {
 
     const client = await getSogniClient();
 
-    // Create a project on Sogni with fixed defaults + Spark billing
+    // Create 16 prompt variations for diverse results
+    const promptVariations = generatePromptVariations(prompt, style, refinement);
+
+    // Create a project on Sogni with fixed defaults + Spark billing - always 16 images
     const createPayload = {
       modelId: MODEL_ID,
-      positivePrompt: prompt,
-      negativePrompt: '',
+      positivePrompt: promptVariations[0], // Use first variation as base
+      negativePrompt: 'blurry, low quality, watermark, text, signature, bad anatomy, distorted, ugly',
       stylePrompt: style,
-      numberOfImages: numImages,
+      numberOfImages: 16, // Always generate 16 variations
       disableNSFWFilter: false,
-      ...(seed != null ? { seed: Number(seed) } : {}),
+      ...(seed !== undefined && seed !== -1 ? { seed: Number(seed) } : {}), // -1 means random seed
       ...RENDER_DEFAULTS
     };
 
@@ -428,8 +509,12 @@ app.post('/api/generate', async (req, res) => {
             if (evt.type === 'completed') {
         console.log('[Project] Project completed event:', projectId);
 
-                // Try multiple approaches to get result URLs
-        try {
+        // Add delay to ensure all job events have been processed
+        setTimeout(async () => {
+          console.log('[Project] Processing completion after delay...');
+
+          // Try multiple approaches to get result URLs
+          try {
           console.log('[Project] Project status:', project.status);
           console.log('[Project] Project jobs count:', project.jobs?.length || 0);
           console.log('[Project] Project resultUrls:', project.resultUrls);
@@ -508,8 +593,9 @@ app.post('/api/generate', async (req, res) => {
           console.error('[Project] Error getting result URLs:', err);
         }
 
-        emitToProject(projectId, { type: 'completed' });
-        detach(); // stop listening for this project
+          emitToProject(projectId, { type: 'completed' });
+          detach(); // stop listening for this project
+        }, 2000); // 2 second delay to ensure all jobs complete
       } else if (evt.type === 'error' || evt.type === 'failed') {
         emitToProject(projectId, {
           type: 'failed',
