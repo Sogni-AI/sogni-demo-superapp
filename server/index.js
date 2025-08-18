@@ -29,6 +29,24 @@ import express from 'express';
 import cors from 'cors';
 import { Readable } from 'node:stream';
 
+// Enhanced error handling for syntax errors
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', new Date().toISOString());
+  console.error('Error:', err.message);
+  console.error('Stack:', err.stack);
+  if (err.code === 'MODULE_NOT_FOUND' || err.message.includes('SyntaxError')) {
+    console.error('File:', err.fileName || 'unknown');
+    console.error('Line:', err.lineNumber || 'unknown');
+  }
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[UNHANDLED REJECTION]', new Date().toISOString());
+  console.error('Reason:', reason);
+  console.error('Promise:', promise);
+});
+
 const app = express();
 app.use(express.json({ limit: '8mb' }));
 
