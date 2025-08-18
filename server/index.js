@@ -266,12 +266,14 @@ async function collectProjectResultUrls(project) {
     // console.log('[collectProjectResultUrls] Found jobs:', jobs.length);
 
     if (jobs.length > 0) {
-      // console.log('[collectProjectResultUrls] Job details:', jobs.map(j => ({
+      /*
+      console.log('[collectProjectResultUrls] Job details:', jobs.map(j => ({
         id: j.id,
         status: j.status,
         hasGetResultUrl: typeof j.getResultUrl === 'function',
         resultUrl: j.resultUrl
-      // })));
+        })));
+      */
 
       const list = await Promise.all(
         jobs.map(async (j, index) => {
