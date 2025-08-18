@@ -100,8 +100,33 @@ VITE_API_BASE_URL=https://your-api.example.com
 
 ## Deploying
 
-- Deploy the **server** behind HTTPS (Node 18+).  
-- Serve the **web** app (static build) and point it to your API by setting `VITE_API_BASE_URL`.
+### Production Build
+
+The frontend compiles to static files that can be hosted anywhere (Netlify, Vercel, S3, etc.):
+
+```bash
+# Build the frontend into static files
+cd web
+pnpm build
+# Creates a dist/ folder with all static files
+```
+
+**Important:** Before building, configure `web/.env` to point to your production API:
+```ini
+# web/.env
+VITE_API_BASE_URL=https://your-api-server.com
+```
+
+### Deployment Steps
+
+1. **Frontend**: 
+   - Set `VITE_API_BASE_URL` in `web/.env` to your backend API URL
+   - Run `pnpm build` to create static files in `web/dist/`
+   - Deploy the `dist/` folder to any static hosting service
+
+2. **Backend**: 
+   - Deploy the Express server (Node 18+) behind HTTPS
+   - Configure `server/.env` with production Sogni credentials
 
 ---
 
