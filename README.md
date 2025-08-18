@@ -128,6 +128,55 @@ VITE_API_BASE_URL=https://your-api-server.com
    - Deploy the Express server (Node 18+) behind HTTPS
    - Configure `server/.env` with production Sogni credentials
 
+### Nginx Deployment (like ink.sogni.ai)
+
+If you want to host this project with Nginx like we do on ink.sogni.ai, sample configuration files are included in the `nginx/` folder:
+
+1. **Setup Frontend (ink.sogni.ai)**:
+   ```bash
+   # Build the frontend
+   cd web
+   echo "VITE_API_BASE_URL=https://ink-api.sogni.ai" > .env
+   pnpm build
+   
+   # Deploy to server
+   sudo mkdir -p /var/www/ink.sogni.ai
+   sudo cp -r dist/* /var/www/ink.sogni.ai/
+   
+   # Setup Nginx
+   sudo cp nginx/ink.sogni.ai.conf /etc/nginx/sites-available/
+   sudo ln -s /etc/nginx/sites-available/ink.sogni.ai.conf /etc/nginx/sites-enabled/
+   ```
+
+2. **Setup Backend API (ink-api.sogni.ai)**:
+   ```bash
+   # Install and run the Node.js server (using PM2)
+   cd server
+   npm install -g pm2
+   pm2 start index.js --name sogni-api
+   pm2 save
+   pm2 startup
+   
+   # Setup Nginx reverse proxy
+   sudo cp nginx/ink-api.sogni.ai.conf /etc/nginx/sites-available/
+   sudo ln -s /etc/nginx/sites-available/ink-api.sogni.ai.conf /etc/nginx/sites-enabled/
+   ```
+
+3. **SSL Certificates**: Use Cloudflare to handle your SSL for free - just proxy your domain through Cloudflare and set SSL mode to "Full (strict)"
+
+4. **Reload Nginx**:
+   ```bash
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
+
+The included Nginx configs handle:
+- SSL/HTTPS with proper security headers
+- CORS for API access from the frontend
+- Server-Sent Events (SSE) for progress streaming
+- Static file caching and compression
+- Rate limiting for API protection
+
 ---
 
 ## License
