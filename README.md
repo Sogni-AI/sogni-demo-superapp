@@ -150,17 +150,38 @@ If you want to host this project with Nginx like we do on ink.sogni.ai, sample c
 
 2. **Setup Backend API (ink-api.sogni.ai)**:
    ```bash
-   # Install and run the Node.js server (using PM2)
-   cd server
+   # Install PM2 globally
    npm install -g pm2
+   
+   # Start the Node.js server with PM2 (two options):
+   cd server
+   
+   # Option 1: Simple start
    pm2 start index.js --name sogni-api
+   
+   # Option 2: Using ecosystem config (recommended)
+   pm2 start ecosystem.config.js
+   
+   # Save PM2 process list and enable startup on boot
    pm2 save
    pm2 startup
+   # (follow the command it outputs)
    
    # Setup Nginx reverse proxy
    sudo cp nginx/ink-api.sogni.ai.conf /etc/nginx/sites-available/
    sudo ln -s /etc/nginx/sites-available/ink-api.sogni.ai.conf /etc/nginx/sites-enabled/
    ```
+   
+   **PM2 Management Commands**:
+   ```bash
+   pm2 list              # View running processes
+   pm2 logs sogni-api    # View logs
+   pm2 restart sogni-api # Restart service
+   pm2 stop sogni-api    # Stop service
+   pm2 monit             # Real-time monitoring
+   ```
+   
+   The `server/ecosystem.config.js` file provides advanced PM2 configuration including log management, memory limits, and environment-specific settings.
 
 3. **SSL Certificates**: Use Cloudflare to handle your SSL for free - just proxy your domain through Cloudflare and set SSL mode to "Full (strict)"
 
