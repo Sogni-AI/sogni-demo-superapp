@@ -18,7 +18,13 @@
  *
  */
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenv.config({ path: join(__dirname, '.env') });
 import express from 'express';
 import cors from 'cors';
 import { Readable } from 'node:stream';
@@ -813,6 +819,10 @@ app.get('/api/result/:projectId/:jobId', async (req, res) => {
 
 app.get('/api/health', (_, res) => {
   res.json({ ok: true, env: process.env.SOGNI_ENV || 'production' });
+});
+
+app.get('/hello', (_, res) => {
+  res.status(200).send('1');
 });
 
 // Start the server
