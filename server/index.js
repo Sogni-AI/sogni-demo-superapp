@@ -121,9 +121,10 @@ async function getSogniClient() {
     const originalOn = client.apiClient.socket.on;
     client.apiClient.socket.on = function(event, handler) {
       const wrappedHandler = function(...args) {
-        if (event === 'jobState' || event === 'jobResult' || event === 'jobProgress') {
-          console.log(`[WebSocket] ${event} event:`, args[0]);
-        }
+        // Commented out verbose WebSocket logging
+      // if (event === 'jobState' || event === 'jobResult' || event === 'jobProgress') {
+      //   console.log(`[WebSocket] ${event} event:`, args[0]);
+      // }
         return handler.apply(this, args);
       };
       return originalOn.call(this, event, wrappedHandler);
@@ -133,9 +134,9 @@ async function getSogniClient() {
   // Ensure socket is online (some SDK builds auto-connect on first use)
   if (typeof client.connect === 'function') {
     try {
-      console.log('[Sogni] Connecting WebSocket…');
+      // console.log('[Sogni] Connecting WebSocket…');
       await client.connect();
-      console.log('[Sogni] WebSocket connected.');
+      // console.log('[Sogni] WebSocket connected.');
     } catch (err) {
       if (!ignoreProjectNotFound(err)) throw err;
     }
@@ -207,10 +208,10 @@ function normalizeProgress(value, step, stepCount) {
  *   (URLs expire; SDK recommends fetching on demand.)
  */
 async function ensureJobResultUrl(project, jobId, eventResultUrl) {
-  console.log('[ensureJobResultUrl] Called with:', { jobId, hasEventUrl: !!eventResultUrl, hasProject: !!project });
+  // console.log('[ensureJobResultUrl] Called with:', { jobId, hasEventUrl: !!eventResultUrl, hasProject: !!project });
 
   if (eventResultUrl) {
-    console.log('[ensureJobResultUrl] Using event result URL:', eventResultUrl);
+    // console.log('[ensureJobResultUrl] Using event result URL:', eventResultUrl);
     return eventResultUrl;
   }
 
@@ -221,14 +222,14 @@ async function ensureJobResultUrl(project, jobId, eventResultUrl) {
 
   try {
     const jobEntity = typeof project.job === 'function' ? project.job(jobId) : undefined;
-    console.log('[ensureJobResultUrl] Job entity found:', !!jobEntity);
+    // console.log('[ensureJobResultUrl] Job entity found:', !!jobEntity);
 
     if (jobEntity) {
       // Try getResultUrl method first (fresh signed URL)
       if (typeof jobEntity.getResultUrl === 'function') {
         try {
           const url = await jobEntity.getResultUrl();
-          console.log('[ensureJobResultUrl] Got fresh URL via getResultUrl():', url);
+          // console.log('[ensureJobResultUrl] Got fresh URL via getResultUrl():', url);
           return url;
         } catch (err) {
           console.warn('[ensureJobResultUrl] getResultUrl() failed:', err.message);
@@ -237,11 +238,11 @@ async function ensureJobResultUrl(project, jobId, eventResultUrl) {
 
       // Fallback to cached resultUrl property
       if (jobEntity.resultUrl) {
-        console.log('[ensureJobResultUrl] Using cached resultUrl:', jobEntity.resultUrl);
+        // console.log('[ensureJobResultUrl] Using cached resultUrl:', jobEntity.resultUrl);
         return jobEntity.resultUrl;
       }
 
-      console.log('[ensureJobResultUrl] Job entity has no result URL');
+      // console.log('[ensureJobResultUrl] Job entity has no result URL');
     }
   } catch (err) {
     console.error('[ensureJobResultUrl] Error accessing job entity:', err);
@@ -257,36 +258,36 @@ async function ensureJobResultUrl(project, jobId, eventResultUrl) {
  * to project.resultUrls if any call fails.
  */
 async function collectProjectResultUrls(project) {
-  console.log('[collectProjectResultUrls] Called with project:', !!project);
+  // console.log('[collectProjectResultUrls] Called with project:', !!project);
   if (!project) return [];
 
   try {
     const jobs = Array.isArray(project.jobs) ? project.jobs : [];
-    console.log('[collectProjectResultUrls] Found jobs:', jobs.length);
+    // console.log('[collectProjectResultUrls] Found jobs:', jobs.length);
 
     if (jobs.length > 0) {
-      console.log('[collectProjectResultUrls] Job details:', jobs.map(j => ({
+      // console.log('[collectProjectResultUrls] Job details:', jobs.map(j => ({
         id: j.id,
         status: j.status,
         hasGetResultUrl: typeof j.getResultUrl === 'function',
         resultUrl: j.resultUrl
-      })));
+      // })));
 
       const list = await Promise.all(
         jobs.map(async (j, index) => {
           try {
             const url = await j.getResultUrl?.();
-            console.log(`[collectProjectResultUrls] Job ${index} getResultUrl():`, url);
+            // console.log(`[collectProjectResultUrls] Job ${index} getResultUrl():`, url);
             return url;
           } catch (err) {
-            console.log(`[collectProjectResultUrls] Job ${index} getResultUrl() failed:`, err.message);
-            console.log(`[collectProjectResultUrls] Job ${index} fallback resultUrl:`, j?.resultUrl);
+            // console.log(`[collectProjectResultUrls] Job ${index} getResultUrl() failed:`, err.message);
+            // console.log(`[collectProjectResultUrls] Job ${index} fallback resultUrl:`, j?.resultUrl);
             return j?.resultUrl;
           }
         })
       );
       const filtered = list.filter(Boolean);
-      console.log('[collectProjectResultUrls] Final filtered list:', filtered);
+      // console.log('[collectProjectResultUrls] Final filtered list:', filtered);
       return filtered;
     }
   } catch (err) {
@@ -296,7 +297,7 @@ async function collectProjectResultUrls(project) {
   // Fallback to snapshot getter (may already contain URLs)
   try {
     const urls = project.resultUrls || [];
-    console.log('[collectProjectResultUrls] Fallback project.resultUrls:', urls);
+    // console.log('[collectProjectResultUrls] Fallback project.resultUrls:', urls);
     return Array.isArray(urls) ? urls.filter(Boolean) : [];
   } catch (err) {
     console.error('[collectProjectResultUrls] Error in fallback:', err);
@@ -454,7 +455,7 @@ app.post('/api/generate', async (req, res) => {
       seed
     } = req.body || {};
 
-    console.log('[Generate] Received request:', { prompt, style, refinement, seed });
+    // console.log('[Generate] Received request:', { prompt, style, refinement, seed });
 
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Missing prompt' });
@@ -513,47 +514,47 @@ app.post('/api/generate', async (req, res) => {
       }
 
             if (evt.type === 'completed') {
-        console.log('[Project] Project completed event:', projectId);
+        // console.log('[Project] Project completed event:', projectId);
 
         // Add delay to ensure all job events have been processed
         setTimeout(async () => {
-          console.log('[Project] Processing completion after delay...');
+          // console.log('[Project] Processing completion after delay...');
 
           // Try multiple approaches to get result URLs
           try {
-          console.log('[Project] Project status:', project.status);
-          console.log('[Project] Project jobs count:', project.jobs?.length || 0);
-          console.log('[Project] Project resultUrls:', project.resultUrls);
+          // console.log('[Project] Project status:', project.status);
+          // console.log('[Project] Project jobs count:', project.jobs?.length || 0);
+          // console.log('[Project] Project resultUrls:', project.resultUrls);
 
           let urls = [];
 
           // Approach 1: Use project.resultUrls directly
           if (project.resultUrls && project.resultUrls.length) {
-            console.log('[Project] Using project.resultUrls directly:', project.resultUrls);
+            // console.log('[Project] Using project.resultUrls directly:', project.resultUrls);
             urls = project.resultUrls;
           }
 
           // Approach 2: Manual collection from jobs
           if (!urls.length) {
-            console.log('[Project] Trying manual collection...');
+            // console.log('[Project] Trying manual collection...');
             urls = await collectProjectResultUrls(project);
-            console.log('[Project] Manual collection result:', urls);
+            // console.log('[Project] Manual collection result:', urls);
           }
 
           // Approach 3: If jobs are still processing, wait and retry
           if (!urls.length && project.jobs && project.jobs.length) {
             const processingJobs = project.jobs.filter(job => job.status === 'processing');
             if (processingJobs.length > 0) {
-              console.log(`[Project] Found ${processingJobs.length} jobs still processing, waiting...`);
+              // console.log(`[Project] Found ${processingJobs.length} jobs still processing, waiting...`);
 
               // Wait a bit for jobs to complete
               for (let attempt = 1; attempt <= 3; attempt++) {
-                console.log(`[Project] Retry attempt ${attempt}/3...`);
+                // console.log(`[Project] Retry attempt ${attempt}/3...`);
                 await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
 
                 // Try collecting again
                 urls = await collectProjectResultUrls(project);
-                console.log(`[Project] Retry ${attempt} collection result:`, urls);
+                // console.log(`[Project] Retry ${attempt} collection result:`, urls);
 
                 if (urls.length > 0) break;
               }
@@ -562,20 +563,20 @@ app.post('/api/generate', async (req, res) => {
 
           // Approach 4: Try the SDK's waitForCompletion as final attempt
           if (!urls.length && project.status === 'completed') {
-            console.log('[Project] Trying waitForCompletion...');
+            // console.log('[Project] Trying waitForCompletion...');
             try {
               urls = await Promise.race([
                 project.waitForCompletion(),
                 new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
               ]);
-              console.log('[Project] waitForCompletion returned:', urls);
+              // console.log('[Project] waitForCompletion returned:', urls);
             } catch (waitErr) {
-              console.log('[Project] waitForCompletion failed/timed out:', waitErr.message);
+              // console.log('[Project] waitForCompletion failed/timed out:', waitErr.message);
             }
           }
 
                   if (urls && urls.length) {
-          console.log('[Project] Found result URLs but not sending results event (individual job events already sent):', urls.length);
+          // console.log('[Project] Found result URLs but not sending results event (individual job events already sent):', urls.length);
           // Note: Disabled project-level 'results' event to prevent duplicate images
           // Individual 'jobCompleted' events already provide real-time results
           // emitToProject(projectId, { type: 'results', urls });
@@ -584,13 +585,13 @@ app.post('/api/generate', async (req, res) => {
 
           // Approach 5: If we have jobs, try to construct proxy URLs as fallback
           if (project.jobs && project.jobs.length) {
-            console.log('[Project] Trying proxy URL fallback...');
+            // console.log('[Project] Trying proxy URL fallback...');
             const proxyUrls = project.jobs.map(job =>
               `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(job.id)}`
             ).filter(Boolean);
 
             if (proxyUrls.length) {
-              console.log('[Project] Using proxy URLs as fallback:', proxyUrls);
+              // console.log('[Project] Using proxy URLs as fallback:', proxyUrls);
               emitToProject(projectId, { type: 'results', urls: proxyUrls, isProxy: true });
             }
           }
@@ -618,20 +619,20 @@ app.post('/api/generate', async (req, res) => {
       emitJobLifecycle(project, jobIndexById, evt);
 
       if (evt.type === 'completed') {
-        console.log('[Job] Job completed event:', evt.jobId);
+        // console.log('[Job] Job completed event:', evt.jobId);
 
         // Try to ensure we have a usable URL (event may not include one)
         let resultUrl = await ensureJobResultUrl(project, evt.jobId, evt.resultUrl);
-        console.log('[Job] Initial result URL:', resultUrl);
+        // console.log('[Job] Initial result URL:', resultUrl);
 
         // If no URL immediately available, try a few more times with delay
         if (!resultUrl) {
-          console.log('[Job] Retrying to get result URL...');
+          // console.log('[Job] Retrying to get result URL...');
           for (let i = 0; i < 3; i++) {
             await new Promise(resolve => setTimeout(resolve, 500 * (i + 1))); // 500ms, 1s, 1.5s delays
             resultUrl = await ensureJobResultUrl(project, evt.jobId, evt.resultUrl);
             if (resultUrl) {
-              console.log('[Job] Got result URL on retry', i + 1, ':', resultUrl);
+              // console.log('[Job] Got result URL on retry', i + 1, ':', resultUrl);
               break;
             }
           }
@@ -649,7 +650,7 @@ app.post('/api/generate', async (req, res) => {
           proxyUrl: `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(evt.jobId)}`
         };
 
-        console.log('[Job] Emitting jobCompleted event:', jobCompletedEvent);
+        // console.log('[Job] Emitting jobCompleted event:', jobCompletedEvent);
         emitToProject(projectId, jobCompletedEvent);
 
         // Note: Removed legacy 'final' and 'result' events to prevent duplicate images
@@ -669,12 +670,12 @@ app.post('/api/generate', async (req, res) => {
 
     // Debug: Log all events we receive
     const debugProject = (evt) => {
-      console.log('[DEBUG] Project event received:', evt.type, evt.projectId);
+      // console.log('[DEBUG] Project event received:', evt.type, evt.projectId);
       onProject(evt);
     };
 
     const debugJob = (evt) => {
-      console.log('[DEBUG] Job event received:', evt.type, evt.projectId, evt.jobId);
+      // console.log('[DEBUG] Job event received:', evt.type, evt.projectId, evt.jobId);
       onJob(evt);
     };
 
@@ -690,7 +691,7 @@ app.post('/api/generate', async (req, res) => {
       // We'll clean it up after a delay to allow proxy access
       setTimeout(() => {
         activeProjects.delete(projectId);
-        console.log(`[Cleanup] Removed project ${projectId} from active projects after delay`);
+        // console.log(`[Cleanup] Removed project ${projectId} from active projects after delay`);
       }, 10 * 60 * 1000); // 10 minutes
     }
   } catch (err) {
@@ -780,19 +781,19 @@ app.get('/api/cancel/:projectId', async (req, res) => {
 app.get('/api/result/:projectId/:jobId', async (req, res) => {
   try {
     const { projectId, jobId } = req.params;
-    console.log(`[Proxy] Request for project ${projectId}, job ${jobId}`);
+    // console.log(`[Proxy] Request for project ${projectId}, job ${jobId}`);
 
     const project = activeProjects.get(projectId);
-    console.log(`[Proxy] Project found:`, !!project);
+    // console.log(`[Proxy] Project found:`, !!project);
 
     if (!project) {
-      console.log(`[Proxy] Available projects:`, Array.from(activeProjects.keys()));
+      // console.log(`[Proxy] Available projects:`, Array.from(activeProjects.keys()));
       return res.status(404).json({ error: 'Project not active (result may have expired)' });
     }
 
-    console.log(`[Proxy] Attempting to get result URL for job ${jobId}`);
+    // console.log(`[Proxy] Attempting to get result URL for job ${jobId}`);
     const url = await ensureJobResultUrl(project, jobId);
-    console.log(`[Proxy] Result URL:`, url ? 'found' : 'not found');
+    // console.log(`[Proxy] Result URL:`, url ? 'found' : 'not found');
 
     if (!url) {
       return res.status(404).json({ error: 'Result URL not available' });
