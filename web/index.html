@@ -572,6 +572,9 @@
         justify-content: center;
         z-index: 1000;
         animation: heroFadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        /* Prevent scrolling in hero mode */
+        overflow: hidden;
+        touch-action: pan-x;
       }
 
       .hero-mode::before {
@@ -1216,8 +1219,8 @@
         }
 
         .center-input .mascot {
-          width: clamp(100px, 25vw, 140px);
-          top: clamp(-80px, -15vw, -60px);
+          width: clamp(160px, 35vw, 200px);
+          top: clamp(-120px, -20vw, -80px);
         }
 
         /* Improve input controls for touch */
@@ -1246,19 +1249,19 @@
           min-height: 44px;
         }
 
-        /* Optimize circular layout for portrait */
+        /* Optimize circular layout for portrait - much smaller radius */
         .circle-container {
-          width: min(85vw, 85vh);
-          height: min(85vw, 85vh);
+          width: min(75vw, 75vh);
+          height: min(75vw, 75vh);
         }
 
         .circle-image {
-          width: clamp(80px, 15vw, 100px);
-          height: clamp(80px, 15vw, 100px);
+          width: clamp(60px, 12vw, 80px);
+          height: clamp(60px, 12vw, 80px);
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-40vh, -200px))
+            translateY(min(-28vh, -140px))
             rotate(calc(-1 * var(--angle)));
         }
 
@@ -1266,7 +1269,7 @@
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-40vh, -200px))
+            translateY(min(-28vh, -140px))
             rotate(calc(-1 * var(--angle)))
             scale(1.1);
         }
@@ -1298,17 +1301,17 @@
           font-size: 0.8rem;
         }
 
-        /* Hero options grid for mobile */
+        /* Hero options grid for mobile - much smaller radius */
         .hero-options-grid {
-          width: min(90vw, 90vh);
-          height: min(90vw, 90vh);
+          width: min(80vw, 80vh);
+          height: min(80vw, 80vh);
         }
 
         .hero-option {
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-43vh, -250px))
+            translateY(min(-32vh, -180px))
             rotate(calc(-1 * var(--angle)));
         }
 
@@ -1316,7 +1319,7 @@
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-43vh, -250px))
+            translateY(min(-32vh, -180px))
             rotate(calc(-1 * var(--angle)))
             scale(1.05);
         }
@@ -1327,19 +1330,19 @@
           min-width: 90px;
         }
 
-        /* Orbit container mobile */
+        /* Orbit container mobile - much smaller radius */
         .orbit-container {
-          width: min(90vw, 90vh);
-          height: min(90vw, 90vh);
+          width: min(80vw, 80vh);
+          height: min(80vw, 80vh);
         }
 
         .orbit-image {
-          width: clamp(70px, 12vw, 80px);
-          height: clamp(70px, 12vw, 80px);
+          width: clamp(60px, 10vw, 70px);
+          height: clamp(60px, 10vw, 70px);
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-43vh, -250px))
+            translateY(min(-32vh, -180px))
             rotate(calc(-1 * var(--angle)));
         }
 
@@ -1347,7 +1350,7 @@
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-43vh, -250px))
+            translateY(min(-32vh, -180px))
             rotate(calc(-1 * var(--angle)))
             scale(1.15);
         }
@@ -1422,12 +1425,12 @@
         }
 
         .circle-image {
-          width: clamp(70px, 12vw, 80px);
-          height: clamp(70px, 12vw, 80px);
+          width: clamp(50px, 10vw, 70px);
+          height: clamp(50px, 10vw, 70px);
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-35vh, -180px))
+            translateY(min(-25vh, -120px))
             rotate(calc(-1 * var(--angle)));
         }
 
@@ -1435,7 +1438,7 @@
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-35vh, -180px))
+            translateY(min(-25vh, -120px))
             rotate(calc(-1 * var(--angle)))
             scale(1.05);
         }
@@ -1489,12 +1492,12 @@
         }
 
         .circle-image {
-          width: 60px;
-          height: 60px;
+          width: 45px;
+          height: 45px;
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(-32vh)
+            translateY(-22vh)
             rotate(calc(-1 * var(--angle)));
         }
 
@@ -1517,12 +1520,12 @@
 
       /* Improve touch interactions */
       @media (hover: none) and (pointer: coarse) {
-        /* Remove hover effects on touch devices */
+        /* Remove hover effects on touch devices - use mobile-specific positioning */
         .circle-image:hover {
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-40vh, -200px))
+            translateY(min(-28vh, -140px))
             rotate(calc(-1 * var(--angle)));
         }
 
@@ -1530,7 +1533,7 @@
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-43vh, -250px))
+            translateY(min(-32vh, -180px))
             rotate(calc(-1 * var(--angle)));
         }
 
@@ -1538,7 +1541,7 @@
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-43vh, -250px))
+            translateY(min(-32vh, -180px))
             rotate(calc(-1 * var(--angle)));
         }
 
@@ -1547,7 +1550,16 @@
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-40vh, -200px))
+            translateY(min(-28vh, -140px))
+            rotate(calc(-1 * var(--angle)))
+            scale(0.95);
+        }
+
+        .orbit-image:active {
+          transform:
+            translate(-50%, -50%)
+            rotate(var(--angle))
+            translateY(min(-32vh, -180px))
             rotate(calc(-1 * var(--angle)))
             scale(0.95);
         }
@@ -1556,7 +1568,7 @@
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-43vh, -250px))
+            translateY(min(-32vh, -180px))
             rotate(calc(-1 * var(--angle)))
             scale(0.95);
         }
