@@ -138,22 +138,16 @@ export default function App() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Prevent body scroll when hero mode is active
+    // Prevent body scroll when hero mode is active (less aggressive approach)
   useEffect(() => {
     if (heroImage) {
       document.body.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.width = '100%';
     } else {
       document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.width = '';
     }
 
     return () => {
       document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.width = '';
     };
   }, [heroImage]);
 
@@ -436,8 +430,14 @@ export default function App() {
   };
 
   // Mobile touch gesture handlers
-    const handleTouchStart = useCallback((e: React.TouchEvent) => {
+      const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (!isMobile || !heroImage) return;
+
+    // Don't interfere with button clicks
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('.hero-nav') || target.closest('.hero-prompt-close') || target.closest('.refinement-close-btn')) {
+      return;
+    }
 
     const touch = e.touches[0];
     touchStartRef.current = {
@@ -445,13 +445,17 @@ export default function App() {
       y: touch.clientY,
       time: Date.now()
     };
-
-    // Prevent default to avoid scroll conflicts
-    e.preventDefault();
   }, [isMobile, heroImage]);
 
     const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     if (!isMobile || !heroImage || !touchStartRef.current) return;
+
+    // Don't interfere with button clicks
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('.hero-nav') || target.closest('.hero-prompt-close') || target.closest('.refinement-close-btn')) {
+      touchStartRef.current = null;
+      return;
+    }
 
     const touch = e.changedTouches[0];
     const deltaX = touch.clientX - touchStartRef.current.x;
@@ -461,9 +465,6 @@ export default function App() {
     // Reset touch start
     touchStartRef.current = null;
 
-    // Prevent default to avoid scroll conflicts
-    e.preventDefault();
-
     // Only process swipes (not taps or long presses)
     if (deltaTime > 500) return;
 
@@ -472,6 +473,9 @@ export default function App() {
 
     // Check if horizontal swipe is dominant
     if (Math.abs(deltaX) > minSwipeDistance && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      // Prevent default only when we detect a valid swipe
+      e.preventDefault();
+
       if (deltaX > 0) {
         // Swipe right - go to previous image
         navigateHero('prev');
