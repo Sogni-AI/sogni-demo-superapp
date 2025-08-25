@@ -124,7 +124,7 @@ export default function App() {
   const nextSessionId = () => `session_${++sessionCounter.current}`;
   const nextImageId = () => `image_${++imageCounter.current}`;
 
-    // Detect mobile device
+  // Detect mobile device
   useEffect(() => {
     const checkMobile = () => {
       const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
@@ -137,25 +137,6 @@ export default function App() {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
-
-  // Prevent body scroll when hero mode is active
-  useEffect(() => {
-    if (heroImage) {
-      document.body.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.width = '100%';
-    } else {
-      document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.width = '';
-    }
-
-    return () => {
-      document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.width = '';
-    };
-  }, [heroImage]);
 
   const announce = useCallback((message: string) => {
     if (liveRegionRef.current) {
@@ -436,7 +417,7 @@ export default function App() {
   };
 
   // Mobile touch gesture handlers
-    const handleTouchStart = useCallback((e: React.TouchEvent) => {
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (!isMobile || !heroImage) return;
 
     const touch = e.touches[0];
@@ -445,12 +426,9 @@ export default function App() {
       y: touch.clientY,
       time: Date.now()
     };
-
-    // Prevent default to avoid scroll conflicts
-    e.preventDefault();
   }, [isMobile, heroImage]);
 
-    const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     if (!isMobile || !heroImage || !touchStartRef.current) return;
 
     const touch = e.changedTouches[0];
@@ -461,28 +439,25 @@ export default function App() {
     // Reset touch start
     touchStartRef.current = null;
 
-    // Prevent default to avoid scroll conflicts
-    e.preventDefault();
-
     // Only process swipes (not taps or long presses)
-    if (deltaTime > 500) return;
+    if (deltaTime > 500 || Math.abs(deltaY) > Math.abs(deltaX)) return;
 
-    // Minimum swipe distance (in pixels) - reduced for easier swiping
-    const minSwipeDistance = 30;
+    // Minimum swipe distance (in pixels)
+    const minSwipeDistance = 50;
 
-    // Check if horizontal swipe is dominant
-    if (Math.abs(deltaX) > minSwipeDistance && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+    if (Math.abs(deltaX) > minSwipeDistance) {
       if (deltaX > 0) {
         // Swipe right - go to previous image
         navigateHero('prev');
-        announce('Previous image');
       } else {
         // Swipe left - go to next image
         navigateHero('next');
-        announce('Next image');
       }
+
+      // Prevent default to avoid any scrolling
+      e.preventDefault();
     }
-  }, [isMobile, heroImage, navigateHero, announce]);
+  }, [isMobile, heroImage, navigateHero]);
 
   const handleSuggest = () => {
     const randomSuggestion = TATTOO_SUGGESTIONS[Math.floor(Math.random() * TATTOO_SUGGESTIONS.length)];
