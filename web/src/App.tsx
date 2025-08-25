@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
 
 /**
  * Award-winning Tattoo Brainstorming App
@@ -117,8 +117,26 @@ export default function App() {
   const sessionCounter = useRef(0);
   const imageCounter = useRef(0);
 
+  // Mobile gesture support
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
   const nextSessionId = () => `session_${++sessionCounter.current}`;
   const nextImageId = () => `image_${++imageCounter.current}`;
+
+  // Detect mobile device
+  useEffect(() => {
+    const checkMobile = () => {
+      const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        ('ontouchstart' in window) ||
+        (window.innerWidth <= 768);
+      setIsMobile(isMobileDevice);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const announce = useCallback((message: string) => {
     if (liveRegionRef.current) {
@@ -398,6 +416,49 @@ export default function App() {
     // Don't clear heroSession when navigating within refinement mode
   };
 
+  // Mobile touch gesture handlers
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (!isMobile || !heroImage) return;
+
+    const touch = e.touches[0];
+    touchStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      time: Date.now()
+    };
+  }, [isMobile, heroImage]);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!isMobile || !heroImage || !touchStartRef.current) return;
+
+    const touch = e.changedTouches[0];
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    const deltaY = touch.clientY - touchStartRef.current.y;
+    const deltaTime = Date.now() - touchStartRef.current.time;
+
+    // Reset touch start
+    touchStartRef.current = null;
+
+    // Only process swipes (not taps or long presses)
+    if (deltaTime > 500 || Math.abs(deltaY) > Math.abs(deltaX)) return;
+
+    // Minimum swipe distance (in pixels)
+    const minSwipeDistance = 50;
+
+    if (Math.abs(deltaX) > minSwipeDistance) {
+      if (deltaX > 0) {
+        // Swipe right - go to previous image
+        navigateHero('prev');
+      } else {
+        // Swipe left - go to next image
+        navigateHero('next');
+      }
+
+      // Prevent default to avoid any scrolling
+      e.preventDefault();
+    }
+  }, [isMobile, heroImage, navigateHero]);
+
   const handleSuggest = () => {
     const randomSuggestion = TATTOO_SUGGESTIONS[Math.floor(Math.random() * TATTOO_SUGGESTIONS.length)];
     setPrompt(randomSuggestion);
@@ -457,7 +518,11 @@ export default function App() {
 
       {/* Hero Mode */}
       {heroImage && (
-        <div className="hero-mode">
+        <div
+          className="hero-mode"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
           {/* Central Hero Image */}
           <div className="hero-center">
             <img
@@ -528,6 +593,11 @@ export default function App() {
           {/* Image counter */}
           <div className="hero-counter">
             {heroIndex + 1} / {(heroSession || currentSession)?.images.length || 0}
+            {isMobile && (
+              <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem' }}>
+                Swipe to navigate
+              </div>
+            )}
           </div>
 
           {/* Show either refinement options or generated variations */}
