@@ -7,6 +7,7 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
     <title>Sogni Tattoo Flash Studio — AI-Powered Design Brainstorming</title>
+    <!-- Cache bust: mobile fix v3.0 FINAL -->
     <meta name="theme-color" content="#111827" />
 
     <!-- Punk Fonts -->
@@ -1202,8 +1203,8 @@
 
       /* Responsive Design */
 
-      /* Mobile Portrait Optimization */
-      @media (max-width: 768px) and (orientation: portrait) {
+      /* Mobile Optimization - DISABLED - Using force override at end instead */
+      @media (max-width: 768px) and (min-width: 99999px) {
         /* Adjust main container for mobile portrait */
         .center-input {
           padding: 1.5rem 1rem;
@@ -1248,20 +1249,20 @@
           min-height: 44px;
         }
 
-        /* Optimize circular layout for portrait - elliptical and much smaller */
+        /* Optimize circular layout for mobile - elliptical and much smaller */
         .circle-container {
-          width: min(90vw, 60vh);
-          height: min(70vw, 45vh);
+          width: min(90vw, 60vh) !important;
+          height: min(70vw, 45vh) !important;
         }
 
         .circle-image {
-          width: clamp(50px, 10vw, 70px);
-          height: clamp(50px, 10vw, 70px);
+          width: clamp(50px, 10vw, 70px) !important;
+          height: clamp(50px, 10vw, 70px) !important;
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
             translateY(min(-20vh, -100px))
-            rotate(calc(-1 * var(--angle)));
+            rotate(calc(-1 * var(--angle))) !important;
         }
 
         .circle-image:hover {
@@ -1270,7 +1271,7 @@
             rotate(var(--angle))
             translateY(min(-20vh, -100px))
             rotate(calc(-1 * var(--angle)))
-            scale(1.1);
+            scale(1.1) !important;
         }
 
         /* Hero mode mobile optimizations */
@@ -1302,8 +1303,8 @@
 
         /* Hero options grid for mobile - elliptical and much smaller */
         .hero-options-grid {
-          width: min(85vw, 55vh);
-          height: min(65vw, 40vh);
+          width: min(85vw, 55vh) !important;
+          height: min(65vw, 40vh) !important;
         }
 
         .hero-option {
@@ -1311,7 +1312,7 @@
             translate(-50%, -50%)
             rotate(var(--angle))
             translateY(min(-22vh, -120px))
-            rotate(calc(-1 * var(--angle)));
+            rotate(calc(-1 * var(--angle))) !important;
         }
 
         .hero-option:hover {
@@ -1320,7 +1321,7 @@
             rotate(var(--angle))
             translateY(min(-22vh, -120px))
             rotate(calc(-1 * var(--angle)))
-            scale(1.05);
+            scale(1.05) !important;
         }
 
         .option-label {
@@ -1331,18 +1332,18 @@
 
         /* Orbit container mobile - elliptical and much smaller */
         .orbit-container {
-          width: min(85vw, 55vh);
-          height: min(65vw, 40vh);
+          width: min(85vw, 55vh) !important;
+          height: min(65vw, 40vh) !important;
         }
 
         .orbit-image {
-          width: clamp(55px, 9vw, 65px);
-          height: clamp(55px, 9vw, 65px);
+          width: clamp(55px, 9vw, 65px) !important;
+          height: clamp(55px, 9vw, 65px) !important;
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
             translateY(min(-22vh, -120px))
-            rotate(calc(-1 * var(--angle)));
+            rotate(calc(-1 * var(--angle))) !important;
         }
 
         .orbit-image:hover {
@@ -1351,7 +1352,7 @@
             rotate(var(--angle))
             translateY(min(-22vh, -120px))
             rotate(calc(-1 * var(--angle)))
-            scale(1.15);
+            scale(1.15) !important;
         }
 
         /* Hero prompt adjustments */
@@ -1517,6 +1518,161 @@
         }
       }
 
+            /* MOBILE FORCE OVERRIDE - Place at end to ensure precedence */
+      @media screen and (max-width: 768px) {
+        /* Main layout containers */
+        .circle-container {
+          width: 280px !important;
+          height: 200px !important;
+        }
+
+        .circle-image {
+          width: 50px !important;
+          height: 50px !important;
+          transform:
+            translate(-50%, -50%)
+            rotate(var(--angle))
+            translateY(-100px)
+            rotate(calc(-1 * var(--angle))) !important;
+        }
+
+        .circle-image:hover {
+          transform:
+            translate(-50%, -50%)
+            rotate(var(--angle))
+            translateY(-100px)
+            rotate(calc(-1 * var(--angle)))
+            scale(1.1) !important;
+        }
+
+        /* Hero mode containers */
+        .hero-options-grid {
+          width: 300px !important;
+          height: 220px !important;
+        }
+
+        .hero-option {
+          transform:
+            translate(-50%, -50%)
+            rotate(var(--angle))
+            translateY(-110px)
+            rotate(calc(-1 * var(--angle))) !important;
+        }
+
+        .hero-option:hover {
+          transform:
+            translate(-50%, -50%)
+            rotate(var(--angle))
+            translateY(-110px)
+            rotate(calc(-1 * var(--angle)))
+            scale(1.05) !important;
+        }
+
+        .orbit-container {
+          width: 300px !important;
+          height: 220px !important;
+        }
+
+        .orbit-image {
+          width: 45px !important;
+          height: 45px !important;
+          transform:
+            translate(-50%, -50%)
+            rotate(var(--angle))
+            translateY(-110px)
+            rotate(calc(-1 * var(--angle))) !important;
+        }
+
+        .orbit-image:hover {
+          transform:
+            translate(-50%, -50%)
+            rotate(var(--angle))
+            translateY(-110px)
+            rotate(calc(-1 * var(--angle)))
+            scale(1.15) !important;
+        }
+
+        /* Mobile mascot - make it much larger */
+        .center-input .mascot {
+          width: 250px !important;
+          top: -130px !important;
+        }
+
+        /* Mobile input adjustments */
+        .center-input {
+          max-width: 320px !important;
+          padding: 1.5rem 1rem !important;
+        }
+
+        .brand h1 {
+          font-size: 1.4rem !important;
+        }
+
+        /* Mobile animation keyframes override */
+        @keyframes circleSlideIn {
+          from {
+            opacity: 0;
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-70px)
+              rotate(calc(-1 * var(--angle)))
+              scale(0.5);
+          }
+          to {
+            opacity: 1;
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-100px)
+              rotate(calc(-1 * var(--angle)))
+              scale(1);
+          }
+        }
+
+        @keyframes heroOptionSlideIn {
+          from {
+            opacity: 0;
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-80px)
+              rotate(calc(-1 * var(--angle)))
+              scale(0.8);
+          }
+          to {
+            opacity: 1;
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-110px)
+              rotate(calc(-1 * var(--angle)))
+              scale(1);
+          }
+        }
+
+        @keyframes orbitSlideIn {
+          from {
+            opacity: 0;
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-80px)
+              rotate(calc(-1 * var(--angle)))
+              scale(0.5);
+          }
+          to {
+            opacity: 1;
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-110px)
+              rotate(calc(-1 * var(--angle)))
+              scale(1);
+          }
+        }
+      }
+
       /* Improve touch interactions */
       @media (hover: none) and (pointer: coarse) {
         /* Remove hover effects on touch devices - use mobile-specific positioning */
@@ -1524,24 +1680,24 @@
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-20vh, -100px))
-            rotate(calc(-1 * var(--angle)));
+            translateY(-100px)
+            rotate(calc(-1 * var(--angle))) !important;
         }
 
         .orbit-image:hover {
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-22vh, -120px))
-            rotate(calc(-1 * var(--angle)));
+            translateY(-110px)
+            rotate(calc(-1 * var(--angle))) !important;
         }
 
         .hero-option:hover {
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-22vh, -120px))
-            rotate(calc(-1 * var(--angle)));
+            translateY(-110px)
+            rotate(calc(-1 * var(--angle))) !important;
         }
 
         /* Add touch feedback */
@@ -1549,27 +1705,27 @@
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-20vh, -100px))
+            translateY(-100px)
             rotate(calc(-1 * var(--angle)))
-            scale(0.95);
+            scale(0.95) !important;
         }
 
         .orbit-image:active {
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-22vh, -120px))
+            translateY(-110px)
             rotate(calc(-1 * var(--angle)))
-            scale(0.95);
+            scale(0.95) !important;
         }
 
         .hero-option:active {
           transform:
             translate(-50%, -50%)
             rotate(var(--angle))
-            translateY(min(-22vh, -120px))
+            translateY(-110px)
             rotate(calc(-1 * var(--angle)))
-            scale(0.95);
+            scale(0.95) !important;
         }
       }
     </style>
