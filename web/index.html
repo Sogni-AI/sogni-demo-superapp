@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
     <title>Sogni Tattoo Flash Studio — AI-Powered Design Brainstorming</title>
-    <!-- Cache bust: mobile fix v4.0 POSITIONED LAYOUT -->
+    <!-- Cache bust: mobile fix v3.0 FINAL -->
     <meta name="theme-color" content="#111827" />
 
     <!-- Punk Fonts -->
@@ -1518,47 +1518,31 @@
         }
       }
 
-                  /* MOBILE FORCE OVERRIDE - Place at end to ensure precedence */
+            /* MOBILE FORCE OVERRIDE - Place at end to ensure precedence */
       @media screen and (max-width: 768px) {
-        /* Mobile layout - position around center input */
+        /* Main layout containers */
         .circle-container {
-          width: 100vw !important;
-          height: 100vh !important;
-          z-index: 50 !important;
+          width: 280px !important;
+          height: 200px !important;
         }
 
         .circle-image {
-          width: 60px !important;
-          height: 60px !important;
+          width: 50px !important;
+          height: 50px !important;
+          transform:
+            translate(-50%, -50%)
+            rotate(var(--angle))
+            translateY(-100px)
+            rotate(calc(-1 * var(--angle))) !important;
         }
 
-        /* Position images in elliptical pattern around screen edges */
-        .circle-image:nth-child(1) { left: 20px !important; top: 20% !important; transform: none !important; }
-        .circle-image:nth-child(2) { right: 20px !important; top: 15% !important; transform: none !important; }
-        .circle-image:nth-child(3) { right: 10px !important; top: 30% !important; transform: none !important; }
-        .circle-image:nth-child(4) { right: 5px !important; top: 50% !important; transform: translateY(-50%) !important; }
-        .circle-image:nth-child(5) { right: 10px !important; top: 70% !important; transform: none !important; }
-        .circle-image:nth-child(6) { right: 20px !important; bottom: 15% !important; transform: none !important; }
-        .circle-image:nth-child(7) { left: 20px !important; bottom: 20% !important; transform: none !important; }
-        .circle-image:nth-child(8) { left: 10px !important; bottom: 35% !important; transform: none !important; }
-        .circle-image:nth-child(9) { left: 5px !important; top: 50% !important; transform: translateY(-50%) !important; }
-        .circle-image:nth-child(10) { left: 10px !important; top: 35% !important; transform: none !important; }
-        .circle-image:nth-child(11) { left: 30px !important; top: 10% !important; transform: none !important; }
-        .circle-image:nth-child(12) { right: 30px !important; top: 10% !important; transform: none !important; }
-        .circle-image:nth-child(13) { right: 30px !important; bottom: 10% !important; transform: none !important; }
-        .circle-image:nth-child(14) { left: 30px !important; bottom: 10% !important; transform: none !important; }
-        .circle-image:nth-child(15) { left: 50% !important; top: 5px !important; transform: translateX(-50%) !important; }
-        .circle-image:nth-child(16) { left: 50% !important; bottom: 5px !important; transform: translateX(-50%) !important; }
-
-        /* Mobile hover states - preserve positioning */
-        .circle-image:nth-child(4):hover { transform: translateY(-50%) scale(1.2) !important; }
-        .circle-image:nth-child(9):hover { transform: translateY(-50%) scale(1.2) !important; }
-        .circle-image:nth-child(15):hover { transform: translateX(-50%) scale(1.2) !important; }
-        .circle-image:nth-child(16):hover { transform: translateX(-50%) scale(1.2) !important; }
-
         .circle-image:hover {
-          transform: scale(1.2) !important;
-          z-index: 200 !important;
+          transform:
+            translate(-50%, -50%)
+            rotate(var(--angle))
+            translateY(-100px)
+            rotate(calc(-1 * var(--angle)))
+            scale(1.1) !important;
         }
 
         /* Hero mode containers */
@@ -1618,29 +1602,73 @@
         .center-input {
           max-width: 320px !important;
           padding: 1.5rem 1rem !important;
-          z-index: 75 !important;
-          position: relative !important;
         }
 
         .brand h1 {
           font-size: 1.4rem !important;
         }
 
-                /* Mobile animations - simple fade in from edges */
-        .circle-image {
-          animation: mobileFadeIn 0.8s ease forwards !important;
-          animation-delay: calc(var(--delay, 0s)) !important;
-          opacity: 0 !important;
-        }
-
-        @keyframes mobileFadeIn {
+        /* Mobile animation keyframes override */
+        @keyframes circleSlideIn {
           from {
             opacity: 0;
-            transform: scale(0.5);
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-70px)
+              rotate(calc(-1 * var(--angle)))
+              scale(0.5);
           }
           to {
             opacity: 1;
-            transform: scale(1);
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-100px)
+              rotate(calc(-1 * var(--angle)))
+              scale(1);
+          }
+        }
+
+        @keyframes heroOptionSlideIn {
+          from {
+            opacity: 0;
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-80px)
+              rotate(calc(-1 * var(--angle)))
+              scale(0.8);
+          }
+          to {
+            opacity: 1;
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-110px)
+              rotate(calc(-1 * var(--angle)))
+              scale(1);
+          }
+        }
+
+        @keyframes orbitSlideIn {
+          from {
+            opacity: 0;
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-80px)
+              rotate(calc(-1 * var(--angle)))
+              scale(0.5);
+          }
+          to {
+            opacity: 1;
+            transform:
+              translate(-50%, -50%)
+              rotate(var(--angle))
+              translateY(-110px)
+              rotate(calc(-1 * var(--angle)))
+              scale(1);
           }
         }
       }
