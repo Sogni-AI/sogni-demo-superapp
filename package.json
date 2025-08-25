@@ -3,13 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "concurrently -k -n WEB,API -c cyan,magenta \"pnpm --filter ./web dev\" \"pnpm --filter ./server dev\"",
+    "dev": "./kill-ports.sh && concurrently -k -n WEB,API -c cyan,magenta \"pnpm --filter ./web dev\" \"pnpm --filter ./server dev\"",
     "build": "pnpm -r build",
     "start": "pnpm --filter ./server start",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "kill-ports": "./kill-ports.sh"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
