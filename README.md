@@ -14,11 +14,8 @@ A tiny, production‑grade scaffold that shows **how to build a Gen‑AI app pow
 ## Quickstart
 
 ```bash
-# we're using the recently popular pnpm package manager for this repo so you can install it if you don't already have it
-npm install -g pnpm
-
 # from the repo root
-pnpm install
+npm install
 
 # set env vars
 cp server/.env.example server/.env
@@ -29,7 +26,7 @@ cp web/.env.example web/.env
 # edit VITE_API_BASE_URL if needed (leave empty for local dev/proxy)
 
 # run both servers
-pnpm dev
+npm run dev
 # web:  http://localhost:5173
 # api:  http://localhost:3001
 ```
@@ -107,7 +104,7 @@ The frontend compiles to static files that can be hosted anywhere (Netlify, Verc
 ```bash
 # Build the frontend into static files
 cd web
-pnpm build
+npm run build
 # Creates a dist/ folder with all static files
 ```
 
@@ -121,7 +118,7 @@ VITE_API_BASE_URL=https://your-api-server.com
 
 1. **Frontend**: 
    - Set `VITE_API_BASE_URL` in `web/.env` to your backend API URL
-   - Run `pnpm build` to create static files in `web/dist/`
+   - Run `npm run build` to create static files in `web/dist/`
    - Deploy the `dist/` folder to any static hosting service
 
 2. **Backend**: 
@@ -137,7 +134,7 @@ If you want to host this project with Nginx like we do on ink.sogni.ai, sample c
    # Build the frontend
    cd web
    echo "VITE_API_BASE_URL=https://ink-api.sogni.ai" > .env
-   pnpm build
+   npm run build
    
    # Deploy to server
    sudo mkdir -p /var/www/ink.sogni.ai

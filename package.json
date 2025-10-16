@@ -2,10 +2,14 @@
   "name": "sogni-tattoo-ideas",
   "private": true,
   "version": "0.1.0",
+  "workspaces": [
+    "server",
+    "web"
+  ],
   "scripts": {
-    "dev": "./kill-ports.sh && concurrently -k -n WEB,API -c cyan,magenta \"pnpm --filter ./web dev\" \"pnpm --filter ./server dev\"",
-    "build": "pnpm -r build",
-    "start": "pnpm --filter ./server start",
+    "dev": "./kill-ports.sh && concurrently -k -n WEB,API -c cyan,magenta \"npm run dev --workspace=web\" \"npm run dev --workspace=server\"",
+    "build": "npm run build --workspaces",
+    "start": "npm run start --workspace=server",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
     "format": "prettier --write .",
