@@ -119,6 +119,8 @@ export default function App() {
   const [brushSize, setBrushSize] = useState(8);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [originalSketch, setOriginalSketch] = useState<string | null>(null);
+  const [showOriginalSketch, setShowOriginalSketch] = useState(false);
 
   const liveRegionRef = useRef<HTMLDivElement>(null);
   const sessionCounter = useRef(0);
@@ -480,6 +482,10 @@ export default function App() {
       // Create a file from the blob
       const file = new File([blob], 'drawing.png', { type: 'image/png' });
       
+      // Store the original sketch as data URL for later toggle
+      const dataUrl = canvas.toDataURL('image/png');
+      setOriginalSketch(dataUrl);
+      
       // Exit draw mode and start generation with controlnet
       setIsDrawMode(false);
       
@@ -743,6 +749,10 @@ export default function App() {
       e.preventDefault();
       navigateHero('next');
     }
+    if (e.key === ' ' && heroImage && originalSketch) {
+      e.preventDefault();
+      setShowOriginalSketch(!showOriginalSketch);
+    }
   };
 
     return (
@@ -759,11 +769,19 @@ export default function App() {
         >
           {/* Central Hero Image */}
           <div className="hero-center">
-            <img
-              src={heroImage.url}
-              alt="Selected tattoo design"
-              className="hero-main-image"
-            />
+            {showOriginalSketch && originalSketch ? (
+              <img
+                src={originalSketch}
+                alt="Original sketch"
+                className="hero-main-image"
+              />
+            ) : (
+              <img
+                src={heroImage.url}
+                alt="Selected tattoo design"
+                className="hero-main-image"
+              />
+            )}
             {/* Loading indicator when generating variations */}
             {heroSession?.generating && (
               <div className="hero-loading">
@@ -830,6 +848,14 @@ export default function App() {
             {isMobile && (
               <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem' }}>
                 Swipe to navigate
+              </div>
+            )}
+            {/* Spacebar toggle indicator for controlnet sessions */}
+            {originalSketch && (
+              <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem', color: '#ff6b35' }}>
+                <span style={{ background: 'rgba(255,107,53,0.2)', padding: '2px 6px', borderRadius: '4px' }}>
+                  SPACE
+                </span> {showOriginalSketch ? 'Show design' : 'Show sketch'}
               </div>
             )}
           </div>
