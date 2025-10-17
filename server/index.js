@@ -101,11 +101,24 @@ function ignoreProjectNotFound(err) {
 }
 
 /**
- * Create or reuse the Sogni client.
+ * Create or reuse the Sogni client with connection recovery.
  * NOTE: We lazy-import & create on demand (not at server boot) to avoid
- * the SDK attempting to resume or fetch projects that don’t exist yet.
+ * the SDK attempting to resume or fetch projects that don't exist yet.
  */
 async function getSogniClient() {
+  if (sogniClient) {
+    // Check if WebSocket is connected, recreate if not
+    try {
+      if (sogniClient.apiClient?.socket?.readyState !== 1) { // WebSocket.OPEN = 1
+        console.log('🔄 WebSocket disconnected, recreating client...');
+        sogniClient = null;
+      }
+    } catch (err) {
+      console.log('🔄 Error checking WebSocket state, recreating client...');
+      sogniClient = null;
+    }
+  }
+  
   if (sogniClient) return sogniClient;
 
   // Lazy import so nothing runs before we need it
@@ -167,6 +180,18 @@ async function getSogniClient() {
     }
   }
 
+  // Add connection error handling and auto-reconnection
+  if (client.apiClient && client.apiClient.socket) {
+    client.apiClient.socket.on('close', () => {
+      console.log('⚠️  WebSocket connection closed');
+    });
+    
+    client.apiClient.socket.on('error', (error) => {
+      console.error('❌ WebSocket error:', error.message);
+    });
+  }
+
+  // Guard against noisy background probes
   process.on('unhandledRejection', (reason) => {
     if (ignoreProjectNotFound(reason)) return;
     console.error('[unhandledRejection]', reason);
@@ -174,6 +199,30 @@ async function getSogniClient() {
 
   sogniClient = client;
   return sogniClient;
+}
+
+/**
+ * Wrapper to retry operations that might fail due to WebSocket disconnection
+ */
+async function withRetry(operation, maxRetries = 2) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const client = await getSogniClient();
+      return await operation(client);
+    } catch (err) {
+      const isConnectionError = err.message?.includes('WebSocket not connected') ||
+                               err.message?.includes('Connection lost') ||
+                               err.message?.includes('not connected');
+      
+      if (isConnectionError && attempt < maxRetries) {
+        console.log(`🔄 Connection error (attempt ${attempt}/${maxRetries}), retrying...`);
+        sogniClient = null; // Force recreation
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 /** Helper: push an event to all SSE listeners for a given project. */
@@ -453,8 +502,6 @@ app.post('/api/generate', async (req, res) => {
       return res.status(400).json({ error: 'Missing prompt' });
     }
 
-    const client = await getSogniClient();
-
     // Create 16 prompt variations for diverse results
     const promptVariations = generatePromptVariations(prompt, style, refinement);
 
@@ -469,11 +516,14 @@ app.post('/api/generate', async (req, res) => {
       ...RENDER_DEFAULTS
     };
 
-    const project = await client.projects.create(createPayload).catch(err => {
-      if (ignoreProjectNotFound(err)) {
-        return client.projects.create(createPayload);
-      }
-      throw err;
+    const project = await withRetry(async (client) => {
+      return await client.projects.create(createPayload).catch(err => {
+        if (ignoreProjectNotFound(err)) {
+          // If a stray probe caused a 404 concurrently, just retry once
+          return client.projects.create(createPayload);
+        }
+        throw err;
+      });
     });
 
     const projectId = project.id;
@@ -858,6 +908,36 @@ app.get('/api/progress/:projectId', (req, res) => {
   });
 });
 
+/**
+ * Cancel a running project (used when FE starts a new run).
+ */
+app.get('/api/cancel/:projectId', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+
+    await withRetry(async (client) => {
+      // Prefer an SDK-level cancel if available
+      if (client?.projects?.cancel && typeof client.projects.cancel === 'function') {
+        await client.projects.cancel(projectId);
+      } else {
+        // Fallback: try instance method on the stored project
+        const project = activeProjects.get(projectId);
+        if (project?.cancel && typeof project.cancel === 'function') {
+          await project.cancel();
+        }
+      }
+    });
+
+    res.json({ ok: true, projectId, cancelled: true });
+  } catch (err) {
+    if (ignoreProjectNotFound(err)) {
+      return res.json({ ok: true, projectId, cancelled: true });
+    }
+    console.error('cancel error', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Cancel failed' });
+  }
+});
+
 // ---------- Proxy a result image via activeProjects (signed URLs can expire) ----------
 app.get('/api/result/:projectId/:jobId', async (req, res) => {
   try {
@@ -893,23 +973,6 @@ app.get('/api/result/:projectId/:jobId', async (req, res) => {
   } catch (err) {
     console.error('[proxy result] error', err);
     res.status(500).json({ error: 'Failed to proxy result' });
-  }
-});
-
-// ---------- Cancel a project ----------
-app.get('/api/cancel/:projectId', async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const project = activeProjects.get(projectId);
-    if (!project) return res.status(404).json({ error: 'Project not active' });
-    if (typeof project.cancel === 'function') {
-      await project.cancel();
-      return res.json({ ok: true });
-    }
-    return res.status(400).json({ error: 'Cancel not supported' });
-  } catch (err) {
-    console.error('[cancel] error', err);
-    res.status(500).json({ error: 'Failed to cancel project' });
   }
 });
 
