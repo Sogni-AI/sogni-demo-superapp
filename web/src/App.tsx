@@ -113,6 +113,13 @@ export default function App() {
   const [heroSession, setHeroSession] = useState<GenerationSession | null>(null); // For variations in hero mode
   const [sessionHistory, setSessionHistory] = useState<GenerationSession[]>([]);
 
+  // Draw mode state
+  const [isDrawMode, setIsDrawMode] = useState(false);
+  const [visionPrompt, setVisionPrompt] = useState('');
+  const [brushSize, setBrushSize] = useState(8);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+
   const liveRegionRef = useRef<HTMLDivElement>(null);
   const sessionCounter = useRef(0);
   const imageCounter = useRef(0);
@@ -363,6 +370,227 @@ export default function App() {
   const handleGenerate = () => {
     if (prompt.trim()) {
       startGeneration(prompt.trim(), selectedStyle);
+    }
+  };
+
+  // Drawing functionality
+  const getEventPosition = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    let clientX, clientY;
+    if ('touches' in e) {
+      const touch = e.touches[0] || e.changedTouches[0];
+      clientX = touch.clientX;
+      clientY = touch.clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY
+    };
+  };
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    setIsDrawing(true);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    const { x, y } = getEventPosition(e);
+    
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    if (!isDrawing) return;
+    
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    const { x, y } = getEventPosition(e);
+    
+    ctx.lineWidth = brushSize;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#000000';
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Fill with white background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const handleDrawModeToggle = () => {
+    setIsDrawMode(!isDrawMode);
+    if (!isDrawMode) {
+      // Initialize canvas when entering draw mode
+      setTimeout(() => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
+        }
+      }, 100);
+    }
+  };
+
+  const handleCreate = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !visionPrompt.trim()) return;
+
+    // Convert canvas to blob for controlnet
+    canvas.toBlob(async (blob) => {
+      if (!blob) return;
+      
+      // Create a file from the blob
+      const file = new File([blob], 'drawing.png', { type: 'image/png' });
+      
+      // Exit draw mode and start generation with controlnet
+      setIsDrawMode(false);
+      
+      // Start generation with controlnet
+      await startGenerationWithControlnet(visionPrompt.trim(), selectedStyle, file);
+    }, 'image/png');
+  };
+
+  const startGenerationWithControlnet = async (basePrompt: string, style: string, controlImage: File) => {
+    // Close any existing SSE connection
+    currentSession?.sse?.close();
+
+    const sessionId = nextSessionId();
+    const newSession: GenerationSession = {
+      id: sessionId,
+      basePrompt,
+      style,
+      refinement: '',
+      images: [],
+      generating: true,
+      progress: 0,
+      error: null
+    };
+
+    setCurrentSession(newSession);
+    setHeroImage(null);
+    announce('Generating 16 tattoo variations from your drawing...');
+
+    try {
+      const formData = new FormData();
+      formData.append('prompt', basePrompt);
+      formData.append('style', style);
+      formData.append('controlImage', controlImage);
+
+      const resp = await fetch(`${API_BASE}/api/generate-controlnet`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!resp.ok) {
+        const payload = await resp.json().catch(() => ({}));
+        throw new Error(payload?.error || `HTTP ${resp.status}`);
+      }
+
+      const { projectId } = await resp.json();
+
+      // Listen to SSE events for this project (same as regular generation)
+      const es = new EventSource(`${API_BASE}/api/progress/${projectId}`);
+
+      es.onmessage = (evt) => {
+        let data;
+        try {
+          data = JSON.parse(evt.data);
+        } catch (err) {
+          console.error('[SSE] Invalid JSON:', evt.data);
+          return;
+        }
+
+        setCurrentSession(prev => {
+          if (!prev || prev.id !== sessionId) return prev;
+
+          if (data.type === 'connected') {
+            return prev;
+          }
+
+          if (data.type === 'progress') {
+            return { ...prev, progress: Number(data.progress) || 0 };
+          }
+
+          if (data.type === 'jobCompleted' && data.job?.resultUrl) {
+            const newImage: TattooImage = {
+              id: nextImageId(),
+              url: data.job.resultUrl,
+              prompt: data.job.positivePrompt || basePrompt,
+              loadTime: Date.now()
+            };
+
+            const updatedImages = [...prev.images, newImage];
+            announce(`${updatedImages.length} of 16 tattoos ready`);
+
+            return { ...prev, images: updatedImages };
+          }
+
+          if (data.type === 'completed') {
+            es.close();
+            announce('All 16 variations complete!');
+
+            // Add to history
+            setSessionHistory(history => [prev, ...history.slice(0, 9)]);
+
+            return { ...prev, generating: false, sse: null };
+          }
+
+          if (data.type === 'error' || data.type === 'jobFailed') {
+            es.close();
+            announce('Generation failed');
+            return { ...prev, generating: false, sse: null, error: data.error || 'Generation failed' };
+          }
+
+          return prev;
+        });
+      };
+
+      es.onerror = () => {
+        es.close();
+        setCurrentSession(prev => prev ? { ...prev, generating: false, sse: null, error: 'Connection error' } : null);
+      };
+
+      setCurrentSession(prev => prev ? { ...prev, sse: es } : null);
+    } catch (err: any) {
+      setCurrentSession(prev => prev ? { ...prev, generating: false, error: err?.message || 'Failed to start generation' } : null);
     }
   };
 
@@ -661,8 +889,74 @@ export default function App() {
         </div>
       )}
 
+      {/* Draw Mode */}
+      {isDrawMode && (
+        <div className="draw-mode">
+          <div className="draw-center">
+            <div className="draw-controls">
+              <input
+                type="text"
+                value={visionPrompt}
+                onChange={(e) => setVisionPrompt(e.target.value)}
+                placeholder="describe your vision"
+                className="vision-input"
+              />
+              
+              <div className="draw-tools">
+                <div className="brush-size-control">
+                  <label>Brush Size:</label>
+                  <input
+                    type="range"
+                    min="2"
+                    max="20"
+                    value={brushSize}
+                    onChange={(e) => setBrushSize(Number(e.target.value))}
+                    className="brush-slider"
+                  />
+                  <span>{brushSize}px</span>
+                </div>
+                
+                <button onClick={clearCanvas} className="clear-btn">
+                  Clear Canvas
+                </button>
+              </div>
+              
+              <button
+                onClick={handleCreate}
+                disabled={!visionPrompt.trim()}
+                className="create-btn"
+              >
+                Create
+              </button>
+            </div>
+            
+            <canvas
+              ref={canvasRef}
+              width={1024}
+              height={1024}
+              className="drawing-canvas"
+              onMouseDown={startDrawing}
+              onMouseMove={draw}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+              onTouchStart={startDrawing}
+              onTouchMove={draw}
+              onTouchEnd={stopDrawing}
+            />
+            
+            <button
+              className="draw-close"
+              onClick={() => setIsDrawMode(false)}
+              aria-label="Close draw mode"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Mode - Circular Layout */}
-      {!heroImage && (
+      {!heroImage && !isDrawMode && (
         <div className="main-mode">
                     {/* Central Input Area */}
           <div className="center-input">
@@ -706,20 +1000,29 @@ export default function App() {
                 ))}
               </select>
 
-                                <button
-                    onClick={handleGenerate}
-                    disabled={!prompt.trim() || currentSession?.generating}
-                    className="generate-btn"
-                  >
-                    {currentSession?.generating ? (
-                      <>
-                        <div className="button-spinner"></div>
-                        Creating...
-                      </>
-                    ) : (
-                      'Generate'
-                    )}
-                  </button>
+                                <div className="button-group">
+                    <button
+                      onClick={handleGenerate}
+                      disabled={!prompt.trim() || currentSession?.generating}
+                      className="generate-btn"
+                    >
+                      {currentSession?.generating ? (
+                        <>
+                          <div className="button-spinner"></div>
+                          Creating...
+                        </>
+                      ) : (
+                        'Generate'
+                      )}
+                    </button>
+                    <button
+                      onClick={handleDrawModeToggle}
+                      disabled={currentSession?.generating}
+                      className="draw-btn"
+                    >
+                      Draw
+                    </button>
+                  </div>
                 </div>
 
 

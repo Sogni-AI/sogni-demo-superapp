@@ -1515,6 +1515,308 @@
         }
       }
 
+      /* Button Group Styles */
+      .button-group {
+        display: flex;
+        gap: 0.5rem;
+        width: 100%;
+      }
+
+      .draw-btn {
+        font-family: var(--font-accent);
+        background: var(--card);
+        border: 3px solid var(--border);
+        border-radius: 8px;
+        padding: 1.2rem 2rem;
+        color: var(--text);
+        font-size: 1.2rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: var(--shadow-punk);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        flex: 1;
+        transform: rotate(-0.5deg);
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .draw-btn:hover:not(:disabled) {
+        transform: rotate(0deg) translateY(-3px) scale(1.02);
+        box-shadow: var(--shadow-lg);
+        border-color: var(--accent);
+        background: var(--accent);
+        color: white;
+      }
+
+      .draw-btn:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+        transform: rotate(-0.5deg);
+      }
+
+      .generate-btn {
+        flex: 1;
+      }
+
+      /* Draw Mode Styles */
+      .draw-mode {
+        position: fixed;
+        inset: 0;
+        background: rgba(10, 10, 10, 0.95);
+        backdrop-filter: blur(10px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        animation: heroFadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .draw-center {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.5rem;
+        padding: 2rem;
+        max-width: 90vw;
+        max-height: 90vh;
+      }
+
+      .draw-controls {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        background: var(--gradient-surface);
+        border: 3px solid var(--border);
+        border-radius: 16px;
+        padding: 1.5rem;
+        backdrop-filter: var(--blur);
+        box-shadow: var(--shadow-punk);
+      }
+
+      .vision-input {
+        font-family: var(--font-main);
+        padding: 0.875rem 1rem;
+        font-size: 1.1rem;
+        font-weight: 700;
+        border: 3px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--text);
+        outline: none;
+        transition: all 0.3s ease;
+        width: 300px;
+        text-align: center;
+        transform: rotate(-0.2deg);
+        box-shadow: var(--shadow-punk);
+        letter-spacing: 0.02em;
+      }
+
+      .vision-input:focus {
+        border-color: var(--accent);
+        box-shadow: var(--focus), var(--shadow-lg);
+        transform: rotate(0deg);
+      }
+
+      .vision-input::placeholder {
+        color: var(--text-muted);
+        font-style: italic;
+      }
+
+      .draw-tools {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .brush-size-control {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--text);
+        font-size: 0.9rem;
+        font-weight: 600;
+      }
+
+      .brush-slider {
+        width: 100px;
+        height: 6px;
+        border-radius: 3px;
+        background: var(--border);
+        outline: none;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+      }
+
+      .brush-slider:hover {
+        opacity: 1;
+      }
+
+      .brush-slider::-webkit-slider-thumb {
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+      }
+
+      .brush-slider::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
+        border: none;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+      }
+
+      .clear-btn {
+        padding: 0.5rem 1rem;
+        background: var(--card);
+        border: 2px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        transform: rotate(0.3deg);
+      }
+
+      .clear-btn:hover {
+        background: var(--error);
+        border-color: var(--error);
+        color: white;
+        transform: rotate(0deg) scale(1.05);
+      }
+
+      .create-btn {
+        font-family: var(--font-accent);
+        background: var(--gradient-punk);
+        background-size: 200% 200%;
+        animation: gradientShift 4s ease-in-out infinite;
+        border: 3px solid var(--accent);
+        border-radius: 8px;
+        padding: 1rem 2rem;
+        color: white;
+        font-size: 1.1rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: var(--shadow-punk);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        transform: rotate(0.3deg);
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+      }
+
+      .create-btn:hover:not(:disabled) {
+        transform: rotate(0deg) translateY(-3px) scale(1.02);
+        box-shadow: var(--shadow-lg);
+        border-color: var(--accent-hover);
+      }
+
+      .create-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: rotate(0.3deg);
+        animation: none;
+      }
+
+      .drawing-canvas {
+        border: 3px solid var(--border);
+        border-radius: 12px;
+        background: white;
+        cursor: crosshair;
+        box-shadow: var(--shadow-lg);
+        max-width: min(400px, 70vw);
+        max-height: min(400px, 50vh);
+        width: auto;
+        height: auto;
+        object-fit: contain;
+      }
+
+      .draw-close {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: var(--accent);
+        border: none;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        color: white;
+        font-size: 1.5rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: var(--shadow);
+        z-index: 101;
+      }
+
+      .draw-close:hover {
+        background: var(--accent-hover);
+        transform: scale(1.1);
+      }
+
+      /* Responsive adjustments for draw mode */
+      @media (max-width: 768px) {
+        .draw-controls {
+          padding: 1rem;
+          gap: 0.75rem;
+        }
+
+        .vision-input {
+          width: 250px;
+          font-size: 1rem;
+        }
+
+        .draw-tools {
+          flex-direction: column;
+          gap: 0.75rem;
+        }
+
+        .drawing-canvas {
+          max-width: min(300px, 80vw);
+          max-height: min(300px, 40vh);
+        }
+
+        .button-group {
+          flex-direction: column;
+          gap: 0.75rem;
+        }
+
+        .generate-btn, .draw-btn {
+          width: 100%;
+          padding: 1rem 1.5rem;
+          font-size: 1rem;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .vision-input {
+          width: 200px;
+          font-size: 0.9rem;
+        }
+
+        .drawing-canvas {
+          max-width: min(250px, 85vw);
+          max-height: min(250px, 35vh);
+        }
+
+        .draw-controls {
+          padding: 0.75rem;
+        }
+      }
+
       /* Improve touch interactions */
       @media (hover: none) and (pointer: coarse) {
         /* Remove hover effects on touch devices */
@@ -1559,6 +1861,11 @@
             translateY(min(-43vh, -250px))
             rotate(calc(-1 * var(--angle)))
             scale(0.95);
+        }
+
+        /* Touch support for drawing canvas */
+        .drawing-canvas {
+          touch-action: none;
         }
       }
     </style>

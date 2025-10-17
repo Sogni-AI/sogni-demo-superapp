@@ -9,9 +9,10 @@
     "debug": "node --enable-source-maps --inspect index.js"
   },
   "dependencies": {
-    "@sogni-ai/sogni-client": "3.0.0-alpha.40",
+    "@sogni-ai/sogni-client": "3.0.0-alpha.42",
+    "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^4.21.2",
-    "cors": "^2.8.5"
+    "multer": "^2.0.2"
   }
 }

@@ -1,21 +1,25 @@
 /**
  * Ultra-simple Sogni backend for teaching purposes
  * - Exposes POST /api/generate to start a render
+ * - Exposes POST /api/generate-controlnet to start a render with a sketch (ControlNet)
  * - Exposes GET  /api/progress/:projectId for SSE progress + results
+ * - Exposes GET  /api/result/:projectId/:jobId to proxy signed result URLs
+ * - Exposes GET  /api/cancel/:projectId to cancel a project
+ * - Exposes GET  /api/health for basic health checks
  *
  * This file purposely avoids sessions/redis/etc. to demonstrate just the core
  * flow for learning. Keep credentials on the server. Frontend never sees them.
  *
- * - Standardize render config for ALL renders:
+ * Unified render config for ALL renders:
  *     modelId: 'flux1-schnell-fp8'
- *     steps: 4
+ *     steps: 4 (ControlNet route overrides this to >= CONTROLNET_MIN_STEPS)
  *     guidance: 1
  *     scheduler: 'Euler'
- *     timeStepSpacing: 'Linear'
+ *     timeStepSpacing: 'Simple'
  *     sizePreset: 'custom'
  *     width: 512, height: 512
- *     stylePrompt: <style from body or ''>
- *
+ *     numberOfImages: 16
+ *     tokenType: 'spark'
  */
 
 import dotenv from 'dotenv';
@@ -25,8 +29,10 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '.env') });
+
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer';
 import { Readable } from 'node:stream';
 
 // Enhanced error handling for syntax errors
@@ -42,6 +48,7 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
+  if (ignoreProjectNotFound(reason)) return;
   console.error('[UNHANDLED REJECTION]', new Date().toISOString());
   console.error('Reason:', reason);
   console.error('Promise:', promise);
@@ -49,6 +56,12 @@ process.on('unhandledRejection', (reason, promise) => {
 
 const app = express();
 app.use(express.json({ limit: '8mb' }));
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
 
 /** Resolve allowed origins (comma-separated in CLIENT_ORIGIN) */
 const origins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
@@ -68,8 +81,6 @@ app.use(
 );
 
 const PORT = process.env.PORT || 3001;
-
-
 
 // Map of projectId -> Set<SSE response objects>
 const sseClients = new Map();
@@ -129,20 +140,20 @@ async function getSogniClient() {
       console.log('✅ Logged into Sogni successfully');
     }
   } catch (err) {
-    if (ignoreProjectNotFound(err)) return; // rare edge if SDK probes
+    if (ignoreProjectNotFound(err)) return client;
     console.error('❌ Sogni login failed:', err.message);
     console.warn('⚠️  Continuing in demo mode. Set valid credentials to enable image generation.');
   }
 
-  // Debug: Listen to all WebSocket events to see what's happening
+  // Debug: optionally wrap socket .on for selective logging
   if (client.apiClient && client.apiClient.socket) {
     const originalOn = client.apiClient.socket.on;
     client.apiClient.socket.on = function(event, handler) {
       const wrappedHandler = function(...args) {
-        // Commented out verbose WebSocket logging
-      // if (event === 'jobState' || event === 'jobResult' || event === 'jobProgress') {
-      //   console.log(`[WebSocket] ${event} event:`, args[0]);
-      // }
+        // uncomment to debug WS events
+        // if (event === 'jobState' || event === 'jobResult' || event === 'jobProgress') {
+        //   console.log(`[WebSocket] ${event} event:`, args[0]);
+        // }
         return handler.apply(this, args);
       };
       return originalOn.call(this, event, wrappedHandler);
@@ -151,16 +162,11 @@ async function getSogniClient() {
 
   // Ensure socket is online (some SDK builds auto-connect on first use)
   if (typeof client.connect === 'function') {
-    try {
-      // console.log('[Sogni] Connecting WebSocket…');
-      await client.connect();
-      // console.log('[Sogni] WebSocket connected.');
-    } catch (err) {
+    try { await client.connect(); } catch (err) {
       if (!ignoreProjectNotFound(err)) throw err;
     }
   }
 
-  // Guard against noisy background probes
   process.on('unhandledRejection', (reason) => {
     if (ignoreProjectNotFound(reason)) return;
     console.error('[unhandledRejection]', reason);
@@ -191,10 +197,12 @@ const RENDER_DEFAULTS = {
   sizePreset: 'custom',
   width: 768,
   height: 768,
-  tokenType: 'spark' // <- charge Spark points instead of SOGNI (defaults to SOGNI if omitted)
-  // Ref: ProjectParams.tokenType; defaults to SOGNI if unspecified
-  // https://sdk-docs.sogni.ai/interfaces/ProjectParams.html
+  numberOfImages: 16,
+  tokenType: 'spark' // <- Spark points (defaults to SOGNI if omitted)
 };
+
+// ControlNet minimum steps (to avoid being overridden to 4)
+const CONTROLNET_MIN_STEPS = 28;
 
 // ---------- Helpers ----------
 
@@ -221,17 +229,9 @@ function normalizeProgress(value, step, stepCount) {
 
 /**
  * Attempt to ensure we have a usable, signed URL for a completed job.
- * - Prefer eventResultUrl when present.
- * - Otherwise, ask the SDK for a fresh URL via Job.getResultUrl().
- *   (URLs expire; SDK recommends fetching on demand.)
  */
 async function ensureJobResultUrl(project, jobId, eventResultUrl) {
-  // console.log('[ensureJobResultUrl] Called with:', { jobId, hasEventUrl: !!eventResultUrl, hasProject: !!project });
-
-  if (eventResultUrl) {
-    // console.log('[ensureJobResultUrl] Using event result URL:', eventResultUrl);
-    return eventResultUrl;
-  }
+  if (eventResultUrl) return eventResultUrl;
 
   if (!project) {
     console.warn('[ensureJobResultUrl] No project available');
@@ -239,28 +239,21 @@ async function ensureJobResultUrl(project, jobId, eventResultUrl) {
   }
 
   try {
-    const jobEntity = typeof project.job === 'function' ? project.job(jobId) : undefined;
-    // console.log('[ensureJobResultUrl] Job entity found:', !!jobEntity);
+    let jobEntity = typeof project.job === 'function' ? project.job(jobId) : undefined;
+    if (!jobEntity && Array.isArray(project.jobs)) {
+      jobEntity = project.jobs.find(j => j?.id === jobId);
+    }
 
     if (jobEntity) {
-      // Try getResultUrl method first (fresh signed URL)
       if (typeof jobEntity.getResultUrl === 'function') {
         try {
           const url = await jobEntity.getResultUrl();
-          // console.log('[ensureJobResultUrl] Got fresh URL via getResultUrl():', url);
           return url;
         } catch (err) {
           console.warn('[ensureJobResultUrl] getResultUrl() failed:', err.message);
         }
       }
-
-      // Fallback to cached resultUrl property
-      if (jobEntity.resultUrl) {
-        // console.log('[ensureJobResultUrl] Using cached resultUrl:', jobEntity.resultUrl);
-        return jobEntity.resultUrl;
-      }
-
-      // console.log('[ensureJobResultUrl] Job entity has no result URL');
+      if (jobEntity.resultUrl) return jobEntity.resultUrl;
     }
   } catch (err) {
     console.error('[ensureJobResultUrl] Error accessing job entity:', err);
@@ -272,65 +265,38 @@ async function ensureJobResultUrl(project, jobId, eventResultUrl) {
 
 /**
  * Build an array of result URLs for the whole project.
- * Uses Job.getResultUrl() for each job (fresh signed URLs), falling back
- * to project.resultUrls if any call fails.
  */
 async function collectProjectResultUrls(project) {
-  // console.log('[collectProjectResultUrls] Called with project:', !!project);
   if (!project) return [];
-
   try {
     const jobs = Array.isArray(project.jobs) ? project.jobs : [];
-    // console.log('[collectProjectResultUrls] Found jobs:', jobs.length);
-
     if (jobs.length > 0) {
-      /*
-      console.log('[collectProjectResultUrls] Job details:', jobs.map(j => ({
-        id: j.id,
-        status: j.status,
-        hasGetResultUrl: typeof j.getResultUrl === 'function',
-        resultUrl: j.resultUrl
-        })));
-      */
-
       const list = await Promise.all(
-        jobs.map(async (j, index) => {
-          try {
-            const url = await j.getResultUrl?.();
-            // console.log(`[collectProjectResultUrls] Job ${index} getResultUrl():`, url);
-            return url;
-          } catch (err) {
-            // console.log(`[collectProjectResultUrls] Job ${index} getResultUrl() failed:`, err.message);
-            // console.log(`[collectProjectResultUrls] Job ${index} fallback resultUrl:`, j?.resultUrl);
-            return j?.resultUrl;
-          }
+        jobs.map(async (j) => {
+          try { return await j.getResultUrl?.(); }
+          catch { return j?.resultUrl; }
         })
       );
-      const filtered = list.filter(Boolean);
-      // console.log('[collectProjectResultUrls] Final filtered list:', filtered);
-      return filtered;
+      return list.filter(Boolean);
     }
   } catch (err) {
-    console.error('[collectProjectResultUrls] Error in jobs processing:', err);
+    console.error('[collectProjectResultUrls] jobs error:', err);
   }
 
-  // Fallback to snapshot getter (may already contain URLs)
   try {
     const urls = project.resultUrls || [];
-    // console.log('[collectProjectResultUrls] Fallback project.resultUrls:', urls);
     return Array.isArray(urls) ? urls.filter(Boolean) : [];
   } catch (err) {
-    console.error('[collectProjectResultUrls] Error in fallback:', err);
+    console.error('[collectProjectResultUrls] fallback error:', err);
     return [];
   }
 }
 
 /**
- * Generate 16 diverse prompt variations optimized for Flux Schnell
- * Flux Schnell prefers: clear subject, style descriptors, quality terms, concise language
+ * Generate 16 prompt variations optimized for Flux Schnell.
+ * (We still use a single positivePrompt; numberOfImages=16 creates 16 variants.)
  */
 function generatePromptVariations(basePrompt, style = '', refinement = '') {
-  // Flux Schnell responds well to these composition styles
   const compositions = [
     'centered composition',
     'dynamic asymmetrical layout',
@@ -350,7 +316,6 @@ function generatePromptVariations(basePrompt, style = '', refinement = '') {
     'contemporary style'
   ];
 
-  // Flux Schnell quality and mood descriptors that work well
   const qualityTerms = [
     'high detail, sharp lines',
     'professional artwork, clean design',
@@ -384,15 +349,9 @@ function generatePromptVariations(basePrompt, style = '', refinement = '') {
       prompt += ' tattoo';
     }
 
-    if (refinement) {
-      prompt += `, ${refinement}`;
-    }
-
+    if (refinement) prompt += `, ${refinement}`;
     prompt += `, ${composition}, ${quality}`;
-
-    // Flux Schnell responds well to these ending terms
     prompt += ', tattoo design, black ink on white background';
-
     variations.push(prompt);
   }
 
@@ -456,13 +415,13 @@ function emitJobLifecycle(project, jobIndexById, evt) {
 // ---------- Routes ----------
 
 /**
- * Start a render - always generates 16 tattoo variations
+ * Start a normal render - generates 16 tattoo variations
  * Body: {
  *   prompt: string,            // required base prompt
- *   style?: string,            // optional style modifier
- *   refinement?: string,       // optional refinement direction (e.g., "more geometric", "darker shading")
- *   baseImageUrl?: string,     // optional - for "more like this" generations
- *   seed?: number              // optional
+ *   style?: string,
+ *   refinement?: string,
+ *   baseImageUrl?: string,
+ *   seed?: number
  * }
  */
 app.post('/api/generate', async (req, res) => {
@@ -475,7 +434,7 @@ app.post('/api/generate', async (req, res) => {
       seed
     } = req.body || {};
 
-    // console.log('[Generate] Received request:', { prompt, style, refinement, seed });
+    console.log('[Generate] Received request:', { prompt, style, refinement, seed });
 
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Missing prompt' });
@@ -489,18 +448,16 @@ app.post('/api/generate', async (req, res) => {
     // Create a project on Sogni with fixed defaults + Spark billing - always 16 images
     const createPayload = {
       modelId: MODEL_ID,
-      positivePrompt: promptVariations[0], // Use first variation as base
+      positivePrompt: promptVariations[0],
       negativePrompt: 'blurry, low quality, watermark, text, signature, bad anatomy, distorted, ugly',
       stylePrompt: style,
-      numberOfImages: 16, // Always generate 16 variations
       disableNSFWFilter: false,
-      ...(seed !== undefined && seed !== -1 ? { seed: Number(seed) } : {}), // -1 means random seed
+      ...(seed !== undefined && seed !== -1 ? { seed: Number(seed) } : {}),
       ...RENDER_DEFAULTS
     };
 
     const project = await client.projects.create(createPayload).catch(err => {
       if (ignoreProjectNotFound(err)) {
-        // If a stray probe caused a 404 concurrently, just retry once
         return client.projects.create(createPayload);
       }
       throw err;
@@ -533,96 +490,51 @@ app.post('/api/generate', async (req, res) => {
         return;
       }
 
-            if (evt.type === 'completed') {
-        // console.log('[Project] Project completed event:', projectId);
-
-        // Add delay to ensure all job events have been processed
+      if (evt.type === 'completed') {
         setTimeout(async () => {
-          // console.log('[Project] Processing completion after delay...');
-
-          // Try multiple approaches to get result URLs
           try {
-          // console.log('[Project] Project status:', project.status);
-          // console.log('[Project] Project jobs count:', project.jobs?.length || 0);
-          // console.log('[Project] Project resultUrls:', project.resultUrls);
-
-          let urls = [];
-
-          // Approach 1: Use project.resultUrls directly
-          if (project.resultUrls && project.resultUrls.length) {
-            // console.log('[Project] Using project.resultUrls directly:', project.resultUrls);
-            urls = project.resultUrls;
-          }
-
-          // Approach 2: Manual collection from jobs
-          if (!urls.length) {
-            // console.log('[Project] Trying manual collection...');
-            urls = await collectProjectResultUrls(project);
-            // console.log('[Project] Manual collection result:', urls);
-          }
-
-          // Approach 3: If jobs are still processing, wait and retry
-          if (!urls.length && project.jobs && project.jobs.length) {
-            const processingJobs = project.jobs.filter(job => job.status === 'processing');
-            if (processingJobs.length > 0) {
-              // console.log(`[Project] Found ${processingJobs.length} jobs still processing, waiting...`);
-
-              // Wait a bit for jobs to complete
-              for (let attempt = 1; attempt <= 3; attempt++) {
-                // console.log(`[Project] Retry attempt ${attempt}/3...`);
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-
-                // Try collecting again
-                urls = await collectProjectResultUrls(project);
-                // console.log(`[Project] Retry ${attempt} collection result:`, urls);
-
-                if (urls.length > 0) break;
+            let urls = [];
+            if (project.resultUrls && project.resultUrls.length) {
+              urls = project.resultUrls;
+            }
+            if (!urls.length) {
+              urls = await collectProjectResultUrls(project);
+            }
+            if (!urls.length && project.jobs && project.jobs.length) {
+              const processingJobs = project.jobs.filter(job => job.status === 'processing');
+              if (processingJobs.length > 0) {
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  urls = await collectProjectResultUrls(project);
+                  if (urls.length > 0) break;
+                }
               }
             }
-          }
-
-          // Approach 4: Try the SDK's waitForCompletion as final attempt
-          if (!urls.length && project.status === 'completed') {
-            // console.log('[Project] Trying waitForCompletion...');
-            try {
-              urls = await Promise.race([
-                project.waitForCompletion(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
-              ]);
-              // console.log('[Project] waitForCompletion returned:', urls);
-            } catch (waitErr) {
-              // console.log('[Project] waitForCompletion failed/timed out:', waitErr.message);
+            if (!urls.length && project.status === 'completed') {
+              try {
+                urls = await Promise.race([
+                  project.waitForCompletion(),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+                ]);
+              } catch {}
             }
-          }
 
-                  if (urls && urls.length) {
-          // console.log('[Project] Found result URLs but not sending results event (individual job events already sent):', urls.length);
-          // Note: Disabled project-level 'results' event to prevent duplicate images
-          // Individual 'jobCompleted' events already provide real-time results
-          // emitToProject(projectId, { type: 'results', urls });
-        } else {
-          console.warn('[Project] No result URLs found after all attempts');
+            if (!urls.length && project.jobs && project.jobs.length) {
+              const proxyUrls = project.jobs.map(job =>
+                `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(job.id)}`
+              ).filter(Boolean);
 
-          // Approach 5: If we have jobs, try to construct proxy URLs as fallback
-          if (project.jobs && project.jobs.length) {
-            // console.log('[Project] Trying proxy URL fallback...');
-            const proxyUrls = project.jobs.map(job =>
-              `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(job.id)}`
-            ).filter(Boolean);
-
-            if (proxyUrls.length) {
-              // console.log('[Project] Using proxy URLs as fallback:', proxyUrls);
-              emitToProject(projectId, { type: 'results', urls: proxyUrls, isProxy: true });
+              if (proxyUrls.length) {
+                emitToProject(projectId, { type: 'results', urls: proxyUrls, isProxy: true });
+              }
             }
+          } catch (err) {
+            console.error('[Project] Error getting result URLs:', err);
           }
-        }
-        } catch (err) {
-          console.error('[Project] Error getting result URLs:', err);
-        }
 
           emitToProject(projectId, { type: 'completed' });
-          detach(); // stop listening for this project
-        }, 2000); // 2 second delay to ensure all jobs complete
+          detach();
+        }, 2000);
       } else if (evt.type === 'error' || evt.type === 'failed') {
         emitToProject(projectId, {
           type: 'failed',
@@ -635,46 +547,28 @@ app.post('/api/generate', async (req, res) => {
     const onJob = async (evt) => {
       if (evt.projectId !== projectId) return;
 
-      // Mirror SDK-like job lifecycle + legacy aliases
+      // Mirror SDK-like lifecycle + legacy percent progress
       emitJobLifecycle(project, jobIndexById, evt);
 
       if (evt.type === 'completed') {
-        // console.log('[Job] Job completed event:', evt.jobId);
-
-        // Try to ensure we have a usable URL (event may not include one)
         let resultUrl = await ensureJobResultUrl(project, evt.jobId, evt.resultUrl);
-        // console.log('[Job] Initial result URL:', resultUrl);
-
-        // If no URL immediately available, try a few more times with delay
         if (!resultUrl) {
-          // console.log('[Job] Retrying to get result URL...');
           for (let i = 0; i < 3; i++) {
-            await new Promise(resolve => setTimeout(resolve, 500 * (i + 1))); // 500ms, 1s, 1.5s delays
+            await new Promise(resolve => setTimeout(resolve, 500 * (i + 1)));
             resultUrl = await ensureJobResultUrl(project, evt.jobId, evt.resultUrl);
-            if (resultUrl) {
-              // console.log('[Job] Got result URL on retry', i + 1, ':', resultUrl);
-              break;
-            }
+            if (resultUrl) break;
           }
         }
 
-        // SDK-like 'jobCompleted' event (preferred by FE)
-        const jobCompletedEvent = {
+        emitToProject(projectId, {
           type: 'jobCompleted',
           job: {
             id: evt.jobId,
             resultUrl,
             positivePrompt: evt.positivePrompt
           },
-          // Same-origin proxy for blob/XHR if CDN CORS blocks
           proxyUrl: `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(evt.jobId)}`
-        };
-
-        // console.log('[Job] Emitting jobCompleted event:', jobCompletedEvent);
-        emitToProject(projectId, jobCompletedEvent);
-
-        // Note: Removed legacy 'final' and 'result' events to prevent duplicate images
-        // The modern 'jobCompleted' event contains all necessary information
+        });
       }
 
       if (evt.type === 'error' || evt.type === 'failed') {
@@ -688,35 +582,19 @@ app.post('/api/generate', async (req, res) => {
       }
     };
 
-    // Debug: Log all events we receive
-    const debugProject = (evt) => {
-      // console.log('[DEBUG] Project event received:', evt.type, evt.projectId);
-      onProject(evt);
-    };
+    const debugProject = (evt) => { onProject(evt); };
+    const debugJob = (evt) => { onJob(evt); };
 
-    const debugJob = (evt) => {
-      // console.log('[DEBUG] Job event received:', evt.type, evt.projectId, evt.jobId);
-      onJob(evt);
-    };
-
-    // Attach once per project
     sogniClient.projects.on('project', debugProject);
     sogniClient.projects.on('job', debugJob);
 
-    // Helper to remove listeners when we're done
     function detach() {
       try { sogniClient.projects.off('project', debugProject); } catch {}
       try { sogniClient.projects.off('job', debugJob); } catch {}
-      // DON'T remove from activeProjects yet - proxy endpoint needs it
-      // We'll clean it up after a delay to allow proxy access
-      setTimeout(() => {
-        activeProjects.delete(projectId);
-        // console.log(`[Cleanup] Removed project ${projectId} from active projects after delay`);
-      }, 10 * 60 * 1000); // 10 minutes
+      setTimeout(() => { activeProjects.delete(projectId); }, 10 * 60 * 1000);
     }
   } catch (err) {
     if (ignoreProjectNotFound(err)) {
-      // Treat as a transient; front-end can retry
       console.warn('[ignored] transient Project not found during generate');
       return res.status(503).json({ error: 'Transient: please retry' });
     }
@@ -725,12 +603,220 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
-/**
- * Server-Sent Events endpoint
- * - Keeps a connection open
- * - We .write() JSON events as they happen
- * - Sends heartbeats so proxies don’t prune the stream
- */
+// ---------- ControlNet (Draw mode) generation endpoint ----------
+//
+// ✅ Fixes implemented here:
+// 1) Uses title (if provided) as the base prompt and appends "ink tattoo concept"
+// 2) No longer emits "formDefaults" that could close/reset your Draw form
+// 3) Emits per-job "jobCompleted" events so images spiral out exactly like non-sketch mode
+//
+app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, res) => {
+  try {
+    // Accept both "title" (preferred for Draw mode) and "prompt" for backward compatibility.
+    const {
+      title = '',
+      prompt = '',
+      // style is allowed, but we won't force a theme that could fight the requested "ink tattoo concept"
+      style = ''
+    } = req.body || {};
+
+    const baseText = String(title || prompt || '').trim();
+    if (!baseText) {
+      return res.status(400).json({ error: 'Missing title or prompt' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'Missing control image' });
+    }
+
+    // ——— Final positive prompt (exact per request):
+    //     "<title> ink tattoo concept"
+    const finalPrompt = `${baseText} ink tattoo sketch, line art, white background`;
+
+    const client = await getSogniClient();
+
+    // Wait for models to be available
+    await client.projects.waitForModels();
+
+    // Prefer specific model; fall back to most-popular available
+    const CONTROLNET_MODEL_ID = 'coreml-artUniverse_v80_768';
+    let modelId = CONTROLNET_MODEL_ID;
+    const availableModels = client.projects.availableModels || [];
+    const preferredModel = availableModels.find(m => m.id === CONTROLNET_MODEL_ID && m.workerCount > 0);
+    if (!preferredModel && availableModels.length > 0) {
+      const mostPopularModel = availableModels.reduce((a, b) =>
+        a.workerCount > b.workerCount ? a : b
+      );
+      modelId = mostPopularModel.id;
+      console.log('[Generate ControlNet] Falling back to most popular model:', modelId);
+    } else if (preferredModel) {
+      console.log('[Generate ControlNet] Using preferred model:', modelId);
+    } else {
+      throw new Error('No available models found');
+    }
+
+    const controlImageBuffer = req.file.buffer;
+
+    // IMPORTANT: put RENDER_DEFAULTS FIRST, then override with ControlNet settings.
+    // Also FORCE steps >= CONTROLNET_MIN_STEPS to avoid being overwritten to 4.
+    const desiredSteps = 34; // tune as desired
+    const createPayload = {
+      ...RENDER_DEFAULTS,                 // (1) base defaults (includes steps: 4)
+      modelId,
+      steps: Math.max(CONTROLNET_MIN_STEPS, desiredSteps), // (2) guaranteed >= 28
+      positivePrompt: finalPrompt,        // <—— EXACT prompt per request
+      disableNSFWFilter: false,
+      controlNet: {
+        name: 'scribble',                 // "draw mode" / sketch guidance
+        image: controlImageBuffer,
+        strength: 1.0,
+        mode: 'cn_priority',
+        guidanceStart: 0.0,
+        guidanceEnd: 1.0
+      },
+      outputFormat: 'png',
+      tokenType: 'spark',
+      network: 'fast'
+    };
+
+    console.log('createPayload', createPayload);
+
+    console.log('[Generate ControlNet] Creating project…', {
+      modelId, steps: createPayload.steps, hasControlImage: true, positivePrompt: finalPrompt
+    });
+
+    const project = await client.projects.create(createPayload).catch(err => {
+      if (ignoreProjectNotFound(err)) {
+        return client.projects.create(createPayload);
+      }
+      throw err;
+    });
+
+    const projectId = project.id;
+    activeProjects.set(projectId, project);
+    console.log('[Generate ControlNet] Project created:', projectId);
+
+    const jobs = Array.isArray(project.jobs) ? project.jobs : [];
+    const jobIndexById = new Map(jobs.map((j, i) => [j.id, i]));
+
+    // Project-level progress relay (0..1 float) — harmless extra feedback
+    project.on('progress', (progress) => {
+      emitToProject(projectId, { type: 'progress', progress: clamp01(progress) });
+    });
+
+    // ✅ Do NOT send "formDefaults" back — this prevents the Draw form from closing/resetting.
+    res.json({
+      projectId,
+      jobs: jobs.map((j, i) => ({ id: j.id, index: i }))
+    });
+
+    // Handlers — mirror the normal /api/generate behavior so the UI can "spiral out"
+    const onProject = async (evt) => {
+      if (evt.projectId !== projectId) return;
+
+      if (evt.type === 'uploadProgress') {
+        emitToProject(projectId, { type: 'uploadProgress', progress: clamp01(evt.progress ?? 0) });
+        return;
+      }
+      if (evt.type === 'uploadComplete') {
+        emitToProject(projectId, { type: 'uploadComplete' });
+        return;
+      }
+
+      if (evt.type === 'completed') {
+        setTimeout(async () => {
+          try {
+            let urls = [];
+            if (project.resultUrls && project.resultUrls.length) {
+              urls = project.resultUrls;
+            }
+            if (!urls.length) {
+              urls = await collectProjectResultUrls(project);
+            }
+
+            if (urls.length) {
+              emitToProject(projectId, {
+                type: 'results',
+                urls
+              });
+            }
+
+            emitToProject(projectId, { type: 'completed' });
+          } catch (err) {
+            console.error('[Project ControlNet] completion processing error:', err);
+            emitToProject(projectId, { type: 'error', error: 'Failed to retrieve controlnet results' });
+          } finally {
+            detach();
+          }
+        }, 1000);
+      } else if (evt.type === 'error' || evt.type === 'failed') {
+        emitToProject(projectId, {
+          type: 'failed',
+          error: evt?.error || evt?.message || 'Project failed'
+        });
+        detach();
+      }
+    };
+
+    const onJob = async (evt) => {
+      if (evt.projectId !== projectId) return;
+
+      // Mirror SDK-like lifecycle + legacy percent progress (drives "spiral" animation)
+      emitJobLifecycle(project, jobIndexById, evt);
+
+      if (evt.type === 'completed') {
+        let resultUrl = await ensureJobResultUrl(project, evt.jobId, evt.resultUrl);
+        if (!resultUrl) {
+          for (let i = 0; i < 3; i++) {
+            await new Promise(resolve => setTimeout(resolve, 500 * (i + 1)));
+            resultUrl = await ensureJobResultUrl(project, evt.jobId, evt.resultUrl);
+            if (resultUrl) break;
+          }
+        }
+
+        emitToProject(projectId, {
+          type: 'jobCompleted',
+          job: {
+            id: evt.jobId,
+            resultUrl,
+            positivePrompt: evt.positivePrompt
+          },
+          proxyUrl: `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(evt.jobId)}`
+        });
+      }
+
+      if (evt.type === 'error' || evt.type === 'failed') {
+        emitToProject(projectId, {
+          type: 'jobFailed',
+          job: {
+            id: evt.jobId,
+            error: evt?.error || evt?.message || 'Job failed'
+          }
+        });
+      }
+    };
+
+    const debugProject = (evt) => { onProject(evt); };
+    const debugJob = (evt) => { onJob(evt); };
+
+    sogniClient.projects.on('project', debugProject);
+    sogniClient.projects.on('job', debugJob);
+
+    function detach() {
+      try { sogniClient.projects.off('project', debugProject); } catch {}
+      try { sogniClient.projects.off('job', debugJob); } catch {}
+      setTimeout(() => { activeProjects.delete(projectId); }, 10 * 60 * 1000);
+    }
+  } catch (err) {
+    if (ignoreProjectNotFound(err)) {
+      console.warn('[ignored] transient Project not found during generate-controlnet');
+      return res.status(503).json({ error: 'Transient: please retry' });
+    }
+    console.error(err);
+    res.status(500).json({ error: err?.message || 'ControlNet render failed to start' });
+  }
+});
+
+// ---------- SSE progress stream ----------
 app.get('/api/progress/:projectId', (req, res) => {
   const { projectId } = req.params;
 
@@ -738,133 +824,96 @@ app.get('/api/progress/:projectId', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
-  // Some proxies (nginx) buffer by default; this header disables buffering if respected
-  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
 
-  // register this client
-  if (!sseClients.has(projectId)) sseClients.set(projectId, new Set());
-  sseClients.get(projectId).add(res);
+  // Track client
+  let set = sseClients.get(projectId);
+  if (!set) {
+    set = new Set();
+    sseClients.set(projectId, set);
+  }
+  set.add(res);
 
-  // initial hello + flush
-  res.write(`data: ${JSON.stringify({ type: 'connected', projectId })}\n\n`);
+  // Initial "connected" message
+  res.write(`data: ${JSON.stringify({ projectId, type: 'connected' })}\n\n`);
 
-  // Heartbeat every 20s to keep the connection alive
-  const hb = setInterval(() => {
-    try { res.write(':\n\n'); } catch {/* ignore */}
-  }, 20000);
+  // Heartbeat to keep proxies happy
+  const heartbeat = setInterval(() => {
+    try { res.write(':\n\n'); } catch {}
+  }, 15000);
 
-  // clean up on close
   req.on('close', () => {
-    clearInterval(hb);
-    const set = sseClients.get(projectId);
-    if (set) {
-      set.delete(res);
-      if (set.size === 0) sseClients.delete(projectId);
-    }
-    try { res.end(); } catch {}
+    clearInterval(heartbeat);
+    set.delete(res);
+    if (set.size === 0) sseClients.delete(projectId);
   });
 });
 
-/**
- * Cancel a running project (used when FE starts a new run).
- */
-app.get('/api/cancel/:projectId', async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const client = await getSogniClient();
-
-    // Prefer an SDK-level cancel if available
-    if (client?.projects?.cancel && typeof client.projects.cancel === 'function') {
-      await client.projects.cancel(projectId);
-    } else {
-      // Fallback: try instance method on the stored project
-      const project = activeProjects.get(projectId);
-      if (project?.cancel && typeof project.cancel === 'function') {
-        await project.cancel();
-      }
-    }
-
-    res.json({ ok: true, projectId, cancelled: true });
-  } catch (err) {
-    if (ignoreProjectNotFound(err)) {
-      return res.json({ ok: true, projectId, cancelled: true });
-    }
-    console.error('cancel error', err);
-    res.status(500).json({ ok: false, error: err?.message || 'Cancel failed' });
-  }
-});
-
-/**
- * Same-origin proxy to stream a job's result image.
- * Useful when CDN CORS prevents XHR->blob in the browser.
- */
+// ---------- Proxy a result image via activeProjects (signed URLs can expire) ----------
 app.get('/api/result/:projectId/:jobId', async (req, res) => {
   try {
     const { projectId, jobId } = req.params;
-    // console.log(`[Proxy] Request for project ${projectId}, job ${jobId}`);
-
     const project = activeProjects.get(projectId);
-    // console.log(`[Proxy] Project found:`, !!project);
-
     if (!project) {
-      // console.log(`[Proxy] Available projects:`, Array.from(activeProjects.keys()));
-      return res.status(404).json({ error: 'Project not active (result may have expired)' });
+      return res.status(404).json({ error: 'Project not active' });
     }
 
-    // console.log(`[Proxy] Attempting to get result URL for job ${jobId}`);
-    const url = await ensureJobResultUrl(project, jobId);
-    // console.log(`[Proxy] Result URL:`, url ? 'found' : 'not found');
-
+    let url = await ensureJobResultUrl(project, jobId, null);
     if (!url) {
-      return res.status(404).json({ error: 'Result URL not available' });
+      // last-ditch attempt: collect any project URLs
+      const all = await collectProjectResultUrls(project);
+      url = all[0];
+    }
+    if (!url) return res.status(404).json({ error: 'Result not available yet' });
+
+    const r = await fetch(url);
+    if (!r.ok) {
+      return res.status(502).json({ error: `Failed to fetch result (${r.status})` });
     }
 
-    const rsp = await fetch(url);
-    if (!rsp.ok || !rsp.body) {
-      return res.status(502).json({ error: `Failed to fetch result (${rsp.status})` });
-    }
-
-    // Stream through with original content-type; add short-lived cache
-    const ct = rsp.headers.get('content-type') || 'application/octet-stream';
+    const ct = r.headers.get('content-type') || 'image/png';
     res.setHeader('Content-Type', ct);
-    res.setHeader('Cache-Control', 'private, max-age=600');
-
-    // Pipe web ReadableStream to Node stream
-    const nodeStream = Readable.fromWeb(rsp.body);
-    nodeStream.pipe(res);
+    if (r.body) {
+      // Node 18: Web stream -> Node stream
+      const nodeStream = Readable.fromWeb(r.body);
+      nodeStream.pipe(res);
+    } else {
+      const buf = Buffer.from(await r.arrayBuffer());
+      res.end(buf);
+    }
   } catch (err) {
-    console.error('proxy result error', err);
-    res.status(500).json({ error: err?.message || 'Proxy failed' });
+    console.error('[proxy result] error', err);
+    res.status(500).json({ error: 'Failed to proxy result' });
   }
 });
 
-app.get('/api/health', (_, res) => {
-  res.json({ ok: true, env: process.env.SOGNI_ENV || 'production' });
+// ---------- Cancel a project ----------
+app.get('/api/cancel/:projectId', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const project = activeProjects.get(projectId);
+    if (!project) return res.status(404).json({ error: 'Project not active' });
+    if (typeof project.cancel === 'function') {
+      await project.cancel();
+      return res.json({ ok: true });
+    }
+    return res.status(400).json({ error: 'Cancel not supported' });
+  } catch (err) {
+    console.error('[cancel] error', err);
+    res.status(500).json({ error: 'Failed to cancel project' });
+  }
 });
 
-app.get('/hello', (_, res) => {
-  res.status(200).send('1');
-});
-
-// Start the server
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Sogni tattoo ideas API running on http://localhost:${PORT}`);
-  console.log(`🔒 Allowed CORS origins: ${origins.join(', ')}`);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
+// ---------- Health ----------
+app.get('/api/health', async (_req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    version: process.env.npm_package_version,
+    sogniConnected: !!sogniClient
   });
 });
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
+app.listen(PORT, () => {
+  console.log(`API listening on http://localhost:${PORT}`);
 });
