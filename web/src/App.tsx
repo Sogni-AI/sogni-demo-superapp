@@ -493,16 +493,22 @@ export default function App() {
     currentSession?.sse?.close();
 
     const sessionId = nextSessionId();
+    // Use the hardcoded style that the backend actually applies for controlnet
+    const controlnetStyle = "Bold Black Ink Tattoo Design";
     const newSession: GenerationSession = {
       id: sessionId,
       basePrompt,
-      style,
+      style: controlnetStyle,
       refinement: '',
       images: [],
       generating: true,
       progress: 0,
       error: null
     };
+
+    // Update UI to show "custom" prompt and "Solid Black" style
+    setPrompt("custom");
+    setSelectedStyle("Solid Black");
 
     setCurrentSession(newSession);
     setHeroImage(null);
@@ -771,7 +777,7 @@ export default function App() {
                   <strong>{heroImage.prompt}</strong>
                   <br />
                   <span style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', opacity: 0.8 }}>
-                    Style: {selectedStyle}
+                    Style: {currentSession?.style || selectedStyle}
                   </span>
                 </div>
                 <button
@@ -1015,6 +1021,9 @@ export default function App() {
                         'Generate'
                       )}
                     </button>
+                    <div className="button-separator">
+                      <span className="or-text">or</span>
+                    </div>
                     <button
                       onClick={handleDrawModeToggle}
                       disabled={currentSession?.generating}

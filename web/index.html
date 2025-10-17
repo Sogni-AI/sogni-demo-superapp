@@ -1518,8 +1518,10 @@
       /* Button Group Styles */
       .button-group {
         display: flex;
-        gap: 0.5rem;
+        flex-direction: column;
+        gap: 0.75rem;
         width: 100%;
+        align-items: center;
       }
 
       .draw-btn {
@@ -1536,7 +1538,7 @@
         box-shadow: var(--shadow-punk);
         text-transform: uppercase;
         letter-spacing: 0.1em;
-        flex: 1;
+        width: 100%;
         transform: rotate(-0.5deg);
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
         display: flex;
@@ -1559,7 +1561,41 @@
       }
 
       .generate-btn {
-        flex: 1;
+        width: 100%;
+      }
+
+      .button-separator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        position: relative;
+      }
+
+      .button-separator::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--border), transparent);
+        z-index: 1;
+      }
+
+      .or-text {
+        background: var(--surface);
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        font-weight: 500;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        font-style: italic;
+        text-transform: lowercase;
+        letter-spacing: 0.05em;
+        z-index: 2;
+        position: relative;
+        backdrop-filter: var(--blur);
       }
 
       /* Draw Mode Styles */

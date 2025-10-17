@@ -192,8 +192,8 @@ const MODEL_ID = 'flux1-schnell-fp8';
 const RENDER_DEFAULTS = {
   steps: 4,
   guidance: 1,
-  scheduler: 'Euler',
-  timeStepSpacing: 'Simple',
+  scheduler: 'DPM Solver Multistep (DPM-Solver++)',
+  timeStepSpacing: 'Linear',
   sizePreset: 'custom',
   width: 768,
   height: 768,
@@ -203,6 +203,19 @@ const RENDER_DEFAULTS = {
 
 // ControlNet minimum steps (to avoid being overridden to 4)
 const CONTROLNET_MIN_STEPS = 28;
+
+// ControlNet-specific defaults for traditional diffusion models
+const CONTROLNET_RENDER_DEFAULTS = {
+  steps: 34,
+  guidance: 7.5,                    // Traditional diffusion model guidance (not Flux)
+  scheduler: 'DPM Solver Multistep (DPM-Solver++)',
+  timeStepSpacing: 'Linear',
+  sizePreset: 'custom',
+  width: 768,
+  height: 768,
+  numberOfImages: 16,
+  tokenType: 'spark'
+};
 
 // ---------- Helpers ----------
 
@@ -628,9 +641,8 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
       return res.status(400).json({ error: 'Missing control image' });
     }
 
-    // ——— Final positive prompt (exact per request):
-    //     "<title> ink tattoo concept"
-    const finalPrompt = `${baseText} ink tattoo sketch, line art, white background`;
+    // ——— Final positive prompt (enhanced for bold ink tattoo results):
+    const finalPrompt = `${baseText} bold black ink tattoo design, thick black lines, high contrast, solid black and white, traditional tattoo style, clean white background`;
 
     const client = await getSogniClient();
 
@@ -656,20 +668,17 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
 
     const controlImageBuffer = req.file.buffer;
 
-    // IMPORTANT: put RENDER_DEFAULTS FIRST, then override with ControlNet settings.
-    // Also FORCE steps >= CONTROLNET_MIN_STEPS to avoid being overwritten to 4.
-    const desiredSteps = 34; // tune as desired
+    // IMPORTANT: Use ControlNet-specific defaults for traditional diffusion models
     const createPayload = {
-      ...RENDER_DEFAULTS,                 // (1) base defaults (includes steps: 4)
+      ...CONTROLNET_RENDER_DEFAULTS,      // Use ControlNet defaults (guidance: 7.5, steps: 34)
       modelId,
-      steps: Math.max(CONTROLNET_MIN_STEPS, desiredSteps), // (2) guaranteed >= 28
-      positivePrompt: finalPrompt,        // <—— EXACT prompt per request
+      positivePrompt: finalPrompt,        // Enhanced prompt for bold ink tattoos
       disableNSFWFilter: false,
       controlNet: {
         name: 'scribble',                 // "draw mode" / sketch guidance
         image: controlImageBuffer,
-        strength: 1.0,
-        mode: 'cn_priority',
+        strength: 0.7,                    // Reduced from 1.0 for better prompt influence
+        mode: 'balanced',                 // Changed from 'cn_priority' to 'balanced'
         guidanceStart: 0.0,
         guidanceEnd: 1.0
       },
