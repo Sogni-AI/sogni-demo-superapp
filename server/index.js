@@ -714,7 +714,7 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
     }
 
     // ——— Final positive prompt (enhanced for bold ink tattoo results):
-    const finalPrompt = `${baseText} bold black ink tattoo design, thick black lines, high contrast, solid black and white, traditional tattoo style, clean white background`;
+    const finalPrompt = `${baseText}, bold black ink tattoo design, thick black lines, high contrast, solid black and white, traditional tattoo style, clean white background`;
 
     const client = await getSogniClient();
 
