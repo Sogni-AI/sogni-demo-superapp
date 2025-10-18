@@ -82,6 +82,7 @@ type TattooImage = {
   prompt: string;
   loadTime: number;
   aspectRatio?: number;
+  isNSFW?: boolean;
 };
 
 type GenerationSession = {
@@ -117,6 +118,9 @@ export default function App() {
   const [isDrawMode, setIsDrawMode] = useState(false);
   const [visionPrompt, setVisionPrompt] = useState('');
   const [brushSize, setBrushSize] = useState(8);
+  const [drawColor, setDrawColor] = useState('#000000'); // black or white
+  const [drawTool, setDrawTool] = useState<'brush' | 'spray'>('brush');
+  const [sprayDensity, setSprayDensity] = useState(50); // spray paint density
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
@@ -218,12 +222,13 @@ export default function App() {
             return { ...prev, progress: Number(data.progress) || 0 };
           }
 
-          if (data.type === 'jobCompleted' && data.job?.resultUrl) {
+          if (data.type === 'jobCompleted') {
             const newImage: TattooImage = {
               id: nextImageId(),
-              url: data.job.resultUrl,
+              url: data.job.resultUrl || '', // Empty string for NSFW images
               prompt: data.job.positivePrompt || basePrompt,
-              loadTime: Date.now()
+              loadTime: Date.now(),
+              isNSFW: data.job.isNSFW || false
             };
 
             const updatedImages = [...prev.images, newImage];
@@ -324,12 +329,13 @@ export default function App() {
             return { ...prev, progress: Number(data.progress) || 0 };
           }
 
-          if (data.type === 'jobCompleted' && data.job?.resultUrl) {
+          if (data.type === 'jobCompleted') {
             const newImage: TattooImage = {
               id: nextImageId(),
-              url: data.job.resultUrl,
+              url: data.job.resultUrl || '', // Empty string for NSFW images
               prompt: data.job.positivePrompt || basePrompt,
-              loadTime: Date.now()
+              loadTime: Date.now(),
+              isNSFW: data.job.isNSFW || false
             };
 
             const updatedImages = [...prev.images, newImage];
@@ -561,12 +567,13 @@ export default function App() {
             return { ...prev, progress: Number(data.progress) || 0 };
           }
 
-          if (data.type === 'jobCompleted' && data.job?.resultUrl) {
+          if (data.type === 'jobCompleted') {
             const newImage: TattooImage = {
               id: nextImageId(),
-              url: data.job.resultUrl,
+              url: data.job.resultUrl || '', // Empty string for NSFW images
               prompt: data.job.positivePrompt || basePrompt,
-              loadTime: Date.now()
+              loadTime: Date.now(),
+              isNSFW: data.job.isNSFW || false
             };
 
             const updatedImages = [...prev.images, newImage];
@@ -614,7 +621,7 @@ export default function App() {
   };
 
   const handleImageClick = (image: TattooImage) => {
-    if (!currentSession) return;
+    if (!currentSession || image.isNSFW) return;
 
     const index = currentSession.images.findIndex(img => img.id === image.id);
 
@@ -902,17 +909,26 @@ export default function App() {
                       '--delay': `${index * 0.1}s`
                     } as React.CSSProperties}
                     onClick={() => {
-                      const newIndex = heroSession.images.findIndex(img => img.id === image.id);
-                      setHeroIndex(newIndex);
-                      setHeroImage(image);
-                      // Keep heroSession active when clicking on refinement images
+                      if (!image.isNSFW) {
+                        const newIndex = heroSession.images.findIndex(img => img.id === image.id);
+                        setHeroIndex(newIndex);
+                        setHeroImage(image);
+                        // Keep heroSession active when clicking on refinement images
+                      }
                     }}
                   >
-                    <img
-                      src={image.url}
-                      alt={`Variation ${index + 1}`}
-                      className="orbit-img"
-                    />
+                    {image.isNSFW ? (
+                      <div className="nsfw-placeholder orbit-img">
+                        <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🚫</div>
+                        <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>Content Filtered</div>
+                      </div>
+                    ) : (
+                      <img
+                        src={image.url}
+                        alt={`Variation ${index + 1}`}
+                        className="orbit-img"
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -1085,12 +1101,19 @@ export default function App() {
                     } as React.CSSProperties}
                     onClick={() => handleImageClick(image)}
                   >
-                    <img
-                      src={image.url}
-                      alt={`Tattoo concept ${index + 1}`}
-                      className="circle-img"
-                      data-image-index={index}
-                    />
+                    {image.isNSFW ? (
+                      <div className="nsfw-placeholder circle-img">
+                        <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🚫</div>
+                        <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>Content Filtered</div>
+                      </div>
+                    ) : (
+                      <img
+                        src={image.url}
+                        alt={`Tattoo concept ${index + 1}`}
+                        className="circle-img"
+                        data-image-index={index}
+                      />
+                    )}
                   </div>
                 );
               })}

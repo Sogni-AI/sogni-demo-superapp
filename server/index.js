@@ -325,6 +325,25 @@ async function ensureJobResultUrl(project, jobId, eventResultUrl) {
   return undefined;
 }
 
+async function getJobInfo(project, jobId) {
+  try {
+    let jobEntity = typeof project.job === 'function' ? project.job(jobId) : undefined;
+    if (!jobEntity && Array.isArray(project.jobs)) {
+      jobEntity = project.jobs.find(j => j?.id === jobId);
+    }
+    
+    if (jobEntity) {
+      return {
+        isNSFW: jobEntity.isNSFW || false,
+        status: jobEntity.status || 'unknown'
+      };
+    }
+  } catch (err) {
+    console.error('[getJobInfo] Error accessing job entity:', err);
+  }
+  return { isNSFW: false, status: 'unknown' };
+}
+
 /**
  * Build an array of result URLs for the whole project.
  */
@@ -623,12 +642,15 @@ app.post('/api/generate', async (req, res) => {
           }
         }
 
+        const jobInfo = await getJobInfo(project, evt.jobId);
+
         emitToProject(projectId, {
           type: 'jobCompleted',
           job: {
             id: evt.jobId,
             resultUrl,
-            positivePrompt: evt.positivePrompt
+            positivePrompt: evt.positivePrompt,
+            isNSFW: jobInfo.isNSFW
           },
           proxyUrl: `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(evt.jobId)}`
         });
@@ -832,12 +854,15 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
           }
         }
 
+        const jobInfo = await getJobInfo(project, evt.jobId);
+
         emitToProject(projectId, {
           type: 'jobCompleted',
           job: {
             id: evt.jobId,
             resultUrl,
-            positivePrompt: evt.positivePrompt
+            positivePrompt: evt.positivePrompt,
+            isNSFW: jobInfo.isNSFW
           },
           proxyUrl: `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(evt.jobId)}`
         });
