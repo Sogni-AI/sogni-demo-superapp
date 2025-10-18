@@ -119,13 +119,19 @@ export default function App() {
   const [visionPrompt, setVisionPrompt] = useState('');
   const [brushSize, setBrushSize] = useState(8);
   const [drawColor, setDrawColor] = useState('#000000'); // black or white
-  const [drawTool, setDrawTool] = useState<'brush' | 'square'>('brush');
+  const [drawTool, setDrawTool] = useState<'brush' | 'square' | 'calligraphy'>('brush');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState<{x: number, y: number} | null>(null);
   const [baseImageData, setBaseImageData] = useState<ImageData | null>(null);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
   const [showOriginalSketch, setShowOriginalSketch] = useState(false);
+
+  // Calligraphy pen state
+  const [lastPos, setLastPos] = useState<{x: number, y: number} | null>(null);
+  const [strokeHistory, setStrokeHistory] = useState<Array<{x: number, y: number, pressure: number, time: number}>>([]);
+  const [drips, setDrips] = useState<Array<{id: number, x: number, y: number, length: number, speed: number, alpha: number}>>([]);
+  const dripCounter = useRef(0);
 
   const liveRegionRef = useRef<HTMLDivElement>(null);
   const sessionCounter = useRef(0);
@@ -151,6 +157,53 @@ export default function App() {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Animate drips
+  useEffect(() => {
+    if (drips.length === 0) return;
+    
+    const animationInterval = setInterval(() => {
+      setDrips(prevDrips => {
+        const canvas = canvasRef.current;
+        if (!canvas) return prevDrips;
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return prevDrips;
+        
+        const updatedDrips = prevDrips.map(drip => ({
+          ...drip,
+          y: drip.y + drip.speed,
+          alpha: drip.alpha - 0.01,
+          length: drip.length + 0.2
+        })).filter(drip => drip.alpha > 0);
+        
+        // Draw drips on canvas
+        ctx.save();
+        updatedDrips.forEach(drip => {
+          ctx.globalAlpha = drip.alpha;
+          ctx.fillStyle = drawColor;
+          ctx.beginPath();
+          ctx.ellipse(drip.x, drip.y, 1, drip.length / 2, 0, 0, 2 * Math.PI);
+          ctx.fill();
+        });
+        ctx.restore();
+        
+        return updatedDrips;
+      });
+    }, 50);
+    
+    return () => clearInterval(animationInterval);
+  }, [drips.length, drawColor]);
+
+  // Focus hero mode when it opens
+  useEffect(() => {
+    if (heroImage) {
+      const heroElement = document.querySelector('.hero-mode') as HTMLElement;
+      if (heroElement) {
+        heroElement.focus();
+      }
+    }
+  }, [heroImage]);
 
   const announce = useCallback((message: string) => {
     if (liveRegionRef.current) {
@@ -425,6 +478,11 @@ export default function App() {
       setStartPos({ x, y });
       // Save the current canvas state
       setBaseImageData(ctx.getImageData(0, 0, canvas.width, canvas.height));
+    } else if (drawTool === 'calligraphy') {
+      setLastPos({ x, y });
+      setStrokeHistory([{ x, y, pressure: 1, time: Date.now() }]);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
     }
   };
 
@@ -457,6 +515,58 @@ export default function App() {
       const width = x - startPos.x;
       const height = y - startPos.y;
       ctx.fillRect(startPos.x, startPos.y, width, height);
+    } else if (drawTool === 'calligraphy' && lastPos) {
+      // Calculate distance and speed for calligraphy effect
+      const dx = x - lastPos.x;
+      const dy = y - lastPos.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const speed = distance; // Speed affects width
+      
+      // Variable width based on speed (slower = thicker)
+      const minWidth = brushSize * 0.3;
+      const maxWidth = brushSize * 1.5;
+      const normalizedSpeed = Math.min(speed / 20, 1); // Normalize speed
+      const currentWidth = maxWidth - (normalizedSpeed * (maxWidth - minWidth));
+      
+      // Calculate angle for calligraphy tilt effect
+      const angle = Math.atan2(dy, dx);
+      
+      // Draw calligraphic stroke
+      ctx.save();
+      ctx.fillStyle = drawColor;
+      
+      // Create a parallelogram shape for calligraphy effect
+      const halfWidth = currentWidth / 2;
+      const tiltOffset = halfWidth * 0.4; // Calligraphy tilt
+      
+      ctx.beginPath();
+      ctx.moveTo(lastPos.x - tiltOffset, lastPos.y - halfWidth);
+      ctx.lineTo(lastPos.x + tiltOffset, lastPos.y + halfWidth);
+      ctx.lineTo(x + tiltOffset, y + halfWidth);
+      ctx.lineTo(x - tiltOffset, y - halfWidth);
+      ctx.closePath();
+      ctx.fill();
+      
+      ctx.restore();
+      
+      // Add to stroke history
+      const now = Date.now();
+      setStrokeHistory(prev => [...prev, { x, y, pressure: normalizedSpeed, time: now }]);
+      
+      // Randomly create drips at stroke ends when moving slowly
+      if (speed < 5 && Math.random() < 0.3) {
+        const newDrip = {
+          id: ++dripCounter.current,
+          x: x + (Math.random() - 0.5) * currentWidth,
+          y: y + currentWidth / 2,
+          length: Math.random() * 15 + 5,
+          speed: Math.random() * 2 + 1,
+          alpha: 0.8
+        };
+        setDrips(prev => [...prev, newDrip]);
+      }
+      
+      setLastPos({ x, y });
     }
   };
 
@@ -464,6 +574,7 @@ export default function App() {
     setIsDrawing(false);
     setStartPos(null);
     setBaseImageData(null);
+    setLastPos(null);
   };
 
   const clearCanvas = () => {
@@ -478,6 +589,10 @@ export default function App() {
     // Fill with white background
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Clear drips and stroke history
+    setDrips([]);
+    setStrokeHistory([]);
   };
 
 
@@ -659,11 +774,13 @@ export default function App() {
         setHeroImage(image);
         setHeroIndex(index);
         setHeroSession(null); // Clear any previous hero session
+        setShowOriginalSketch(false); // Reset sketch toggle
       }, 200);
     } else {
       setHeroImage(image);
       setHeroIndex(index);
       setHeroSession(null);
+      setShowOriginalSketch(false); // Reset sketch toggle
     }
   };
 
@@ -681,6 +798,8 @@ export default function App() {
 
     setHeroIndex(newIndex);
     setHeroImage(activeSession.images[newIndex]);
+    // Reset sketch toggle when navigating
+    setShowOriginalSketch(false);
     // Don't clear heroSession when navigating within refinement mode
   };
 
@@ -794,6 +913,9 @@ export default function App() {
           className="hero-mode"
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          autoFocus
         >
           {/* Central Hero Image */}
           <div className="hero-center">
@@ -982,6 +1104,13 @@ export default function App() {
                       title="Brush"
                     >
                       🖌️
+                    </button>
+                    <button 
+                      className={`tool-btn ${drawTool === 'calligraphy' ? 'active' : ''}`}
+                      onClick={() => setDrawTool('calligraphy')}
+                      title="Calligraphy Pen (with drips)"
+                    >
+                      🖋️
                     </button>
                     <button 
                       className={`tool-btn ${drawTool === 'square' ? 'active' : ''}`}
