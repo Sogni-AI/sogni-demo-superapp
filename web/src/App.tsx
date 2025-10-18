@@ -96,6 +96,8 @@ type GenerationSession = {
   sse?: EventSource | null;
   error?: string | null;
   seed?: number;
+  isControlnet?: boolean;
+  controlImageBlob?: Blob;
 };
 
 export default function App() {
@@ -125,6 +127,7 @@ export default function App() {
   const [startPos, setStartPos] = useState<{x: number, y: number} | null>(null);
   const [baseImageData, setBaseImageData] = useState<ImageData | null>(null);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
+  const [originalControlBlob, setOriginalControlBlob] = useState<Blob | null>(null);
   const [showOriginalSketch, setShowOriginalSketch] = useState(false);
 
   // Calligraphy pen state
@@ -214,7 +217,7 @@ export default function App() {
     }
   }, []);
 
-  const startHeroGeneration = useCallback(async (basePrompt: string, style: string, refinement: string, seed?: number) => {
+  const startHeroGeneration = useCallback(async (basePrompt: string, style: string, refinement: string, seed?: number, useControlnet?: boolean, sourceImageUrl?: string) => {
     // Close any existing SSE connection
     heroSession?.sse?.close();
 
@@ -235,16 +238,50 @@ export default function App() {
     announce('Generating 16 variations...');
 
     try {
-      const resp = await fetch(`${API_BASE}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: basePrompt,
-          style,
-          refinement,
-          seed: seed !== undefined ? seed : undefined
-        })
-      });
+      let resp;
+      
+      if (useControlnet) {
+        // Convert the selected image to a blob for controlnet
+        let controlBlob = originalControlBlob;
+        
+        if (sourceImageUrl) {
+          // If we have a source image URL (selected rendered image), convert it to blob
+          try {
+            const imageResponse = await fetch(sourceImageUrl);
+            controlBlob = await imageResponse.blob();
+          } catch (err) {
+            console.warn('Failed to fetch source image, falling back to original control blob:', err);
+          }
+        }
+        
+        if (controlBlob) {
+          // Use controlnet endpoint for refinements of controlnet-generated images
+          const formData = new FormData();
+          formData.append('prompt', basePrompt);
+          formData.append('style', style);
+          formData.append('refinement', refinement);
+          formData.append('controlImage', controlBlob);
+          
+          resp = await fetch(`${API_BASE}/api/generate-controlnet`, {
+            method: 'POST',
+            body: formData
+          });
+        } else {
+          throw new Error('No control image available for controlnet generation');
+        }
+      } else {
+        // Use regular endpoint for text-only generations
+        resp = await fetch(`${API_BASE}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: basePrompt,
+            style,
+            refinement,
+            seed: seed !== undefined ? seed : undefined
+          })
+        });
+      }
 
       if (!resp.ok) {
         const payload = await resp.json().catch(() => ({}));
@@ -628,6 +665,9 @@ export default function App() {
       const dataUrl = canvas.toDataURL('image/png');
       setOriginalSketch(dataUrl);
       
+      // Store the original control blob for refinements
+      setOriginalControlBlob(blob);
+      
       // Exit draw mode and start generation with controlnet
       setIsDrawMode(false);
       
@@ -651,7 +691,9 @@ export default function App() {
       images: [],
       generating: true,
       progress: 0,
-      error: null
+      error: null,
+      isControlnet: true,
+      controlImageBlob: controlImage
     };
 
     // Update UI to show "custom" prompt and "Solid Black" style
@@ -753,7 +795,9 @@ export default function App() {
     if (!heroImage || !currentSession) return;
 
     const seed = option.lockSeed ? currentSession.seed : -1; // -1 for random seed
-    startHeroGeneration(heroImage.prompt, selectedStyle, option.value, seed);
+    const useControlnet = currentSession.isControlnet;
+    const sourceImageUrl = useControlnet ? heroImage.url : undefined;
+    startHeroGeneration(heroImage.prompt, selectedStyle, option.value, seed, useControlnet, sourceImageUrl);
   };
 
   const handleImageClick = (image: TattooImage) => {

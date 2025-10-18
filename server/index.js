@@ -702,7 +702,8 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
       title = '',
       prompt = '',
       // style is allowed, but we won't force a theme that could fight the requested "ink tattoo concept"
-      style = ''
+      style = '',
+      refinement = ''
     } = req.body || {};
 
     const baseText = String(title || prompt || '').trim();
@@ -714,7 +715,12 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
     }
 
     // ——— Final positive prompt (enhanced for bold ink tattoo results):
-    const finalPrompt = `${baseText}, bold black ink tattoo design, thick black lines, high contrast, solid black and white, traditional tattoo style, clean white background`;
+    let finalPrompt = `${baseText}, bold black ink tattoo design, thick black lines, high contrast, solid black and white, traditional tattoo style, clean white background`;
+    
+    // Add refinement if provided
+    if (refinement) {
+      finalPrompt += `, ${refinement}`;
+    }
 
     const client = await getSogniClient();
 
