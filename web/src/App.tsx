@@ -119,10 +119,11 @@ export default function App() {
   const [visionPrompt, setVisionPrompt] = useState('');
   const [brushSize, setBrushSize] = useState(8);
   const [drawColor, setDrawColor] = useState('#000000'); // black or white
-  const [drawTool, setDrawTool] = useState<'brush' | 'spray'>('brush');
-  const [sprayDensity, setSprayDensity] = useState(50); // spray paint density
+  const [drawTool, setDrawTool] = useState<'brush' | 'square'>('brush');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [startPos, setStartPos] = useState<{x: number, y: number} | null>(null);
+  const [baseImageData, setBaseImageData] = useState<ImageData | null>(null);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
   const [showOriginalSketch, setShowOriginalSketch] = useState(false);
 
@@ -417,8 +418,14 @@ export default function App() {
     
     const { x, y } = getEventPosition(e);
     
-    ctx.beginPath();
-    ctx.moveTo(x, y);
+    if (drawTool === 'brush') {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    } else if (drawTool === 'square') {
+      setStartPos({ x, y });
+      // Save the current canvas state
+      setBaseImageData(ctx.getImageData(0, 0, canvas.width, canvas.height));
+    }
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -433,17 +440,30 @@ export default function App() {
     
     const { x, y } = getEventPosition(e);
     
-    ctx.lineWidth = brushSize;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#000000';
-    ctx.lineTo(x, y);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y);
+    if (drawTool === 'brush') {
+      ctx.lineWidth = brushSize;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = drawColor;
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    } else if (drawTool === 'square' && startPos && baseImageData) {
+      // Restore the base image and draw preview rectangle
+      ctx.putImageData(baseImageData, 0, 0);
+      
+      // Draw rectangle preview
+      ctx.fillStyle = drawColor;
+      const width = x - startPos.x;
+      const height = y - startPos.y;
+      ctx.fillRect(startPos.x, startPos.y, width, height);
+    }
   };
 
   const stopDrawing = () => {
     setIsDrawing(false);
+    setStartPos(null);
+    setBaseImageData(null);
   };
 
   const clearCanvas = () => {
@@ -459,6 +479,7 @@ export default function App() {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   };
+
 
   const handleDrawModeToggle = () => {
     setIsDrawMode(!isDrawMode);
@@ -951,22 +972,63 @@ export default function App() {
               />
               
               <div className="draw-tools">
-                <div className="brush-size-control">
-                  <label>Brush Size:</label>
-                  <input
-                    type="range"
-                    min="2"
-                    max="20"
-                    value={brushSize}
-                    onChange={(e) => setBrushSize(Number(e.target.value))}
-                    className="brush-slider"
-                  />
-                  <span>{brushSize}px</span>
+                {/* Compact horizontal layout */}
+                <div className="tools-row">
+                  {/* Tool Selection */}
+                  <div className="tool-buttons">
+                    <button 
+                      className={`tool-btn ${drawTool === 'brush' ? 'active' : ''}`}
+                      onClick={() => setDrawTool('brush')}
+                      title="Brush"
+                    >
+                      🖌️
+                    </button>
+                    <button 
+                      className={`tool-btn ${drawTool === 'square' ? 'active' : ''}`}
+                      onClick={() => setDrawTool('square')}
+                      title="Square"
+                    >
+                      ⬛
+                    </button>
+                  </div>
+
+                  {/* Color Selection */}
+                  <div className="color-buttons">
+                    <button 
+                      className={`color-btn black ${drawColor === '#000000' ? 'active' : ''}`}
+                      onClick={() => setDrawColor('#000000')}
+                      title="Black"
+                    >
+                      ⚫
+                    </button>
+                    <button 
+                      className={`color-btn white ${drawColor === '#ffffff' ? 'active' : ''}`}
+                      onClick={() => setDrawColor('#ffffff')}
+                      title="White"
+                    >
+                      ⚪
+                    </button>
+                  </div>
+
+                  {/* Size Control */}
+                  <div className="size-control">
+                    <label>Size:</label>
+                    <input
+                      type="range"
+                      min="2"
+                      max="40"
+                      value={brushSize}
+                      onChange={(e) => setBrushSize(Number(e.target.value))}
+                      className="size-slider"
+                    />
+                    <span>{brushSize}px</span>
+                  </div>
+
+                  {/* Clear Button */}
+                  <button onClick={clearCanvas} className="clear-btn">
+                    🗑️
+                  </button>
                 </div>
-                
-                <button onClick={clearCanvas} className="clear-btn">
-                  Clear Canvas
-                </button>
               </div>
               
               <button

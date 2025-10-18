@@ -1741,24 +1741,153 @@
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
       }
 
-      .clear-btn {
+
+      /* Compact draw tools styles */
+      .draw-tools {
+        display: flex;
+        justify-content: center;
+        margin: 0.5rem 0;
+      }
+
+      .tools-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
         padding: 0.5rem 1rem;
-        background: var(--card);
-        border: 2px solid var(--border);
+        background: rgba(0, 0, 0, 0.05);
         border-radius: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .tool-buttons, .color-buttons {
+        display: flex;
+        gap: 0.25rem;
+      }
+
+      .size-control {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .tool-btn, .color-btn {
+        padding: 0.4rem 0.6rem;
+        border: 2px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
         color: var(--text);
-        font-size: 0.9rem;
-        font-weight: 600;
         cursor: pointer;
         transition: all 0.3s ease;
-        transform: rotate(0.3deg);
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2.2rem;
+        height: 2.2rem;
+      }
+
+      .tool-btn:hover, .color-btn:hover {
+        border-color: var(--accent);
+        background: var(--bg-secondary);
+        transform: translateY(-1px);
+      }
+
+      .tool-btn.active, .color-btn.active {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: white;
+        box-shadow: var(--shadow);
+      }
+
+      .color-btn.black {
+        background: #000;
+        color: white;
+        border-color: #333;
+      }
+
+      .color-btn.white {
+        background: #fff;
+        color: #000;
+        border-color: #ddd;
+      }
+
+      .color-btn.black.active {
+        background: #000;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent);
+      }
+
+      .color-btn.white.active {
+        background: #fff;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent);
+      }
+
+      .size-slider {
+        width: 80px;
+        height: 4px;
+        background: var(--bg-secondary);
+        border-radius: 2px;
+        outline: none;
+        transition: all 0.3s ease;
+        cursor: pointer;
+      }
+
+      .size-slider::-webkit-slider-thumb {
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        background: var(--accent);
+        border-radius: 50%;
+        cursor: pointer;
+        box-shadow: var(--shadow);
+        transition: all 0.3s ease;
+      }
+
+      .size-slider::-webkit-slider-thumb:hover {
+        background: var(--accent-hover);
+        transform: scale(1.1);
+        box-shadow: var(--shadow-lg);
+      }
+
+      .size-slider::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        background: var(--accent);
+        border-radius: 50%;
+        cursor: pointer;
+        border: none;
+        box-shadow: var(--shadow);
+        transition: all 0.3s ease;
+      }
+
+      .size-slider::-moz-range-thumb:hover {
+        background: var(--accent-hover);
+        transform: scale(1.1);
+      }
+
+      .clear-btn {
+        padding: 0.4rem 0.6rem;
+        border: 2px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
+        color: var(--text);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2.2rem;
+        height: 2.2rem;
       }
 
       .clear-btn:hover {
         background: var(--error);
         border-color: var(--error);
         color: white;
-        transform: rotate(0deg) scale(1.05);
+        transform: translateY(-1px);
       }
 
       .create-btn {
@@ -1841,9 +1970,20 @@
           font-size: 1rem;
         }
 
-        .draw-tools {
+        .tools-row {
           flex-direction: column;
           gap: 0.75rem;
+          padding: 0.75rem;
+        }
+
+        .tool-buttons, .color-buttons {
+          justify-content: center;
+        }
+
+        .size-control {
+          flex-direction: column;
+          gap: 0.25rem;
+          text-align: center;
         }
 
         .drawing-canvas {
