@@ -708,6 +708,49 @@ export default function App() {
     [isMobile, heroImage, navigateHero]
   );
 
+  // Spacebar toggle functionality (reusable for click and keypress)
+  const handleSpacebarToggle = useCallback(() => {
+    const activeSession = heroSession || currentSession;
+    const historySession = activeSession === heroSession ? heroSession : currentSession;
+    const history = historySession?.controlnetHistory || [];
+    const compareUrl = historySession?.compareAgainstUrl || originalSketch || '';
+    
+    // Only proceed if we're in hero mode OR have comparison data available
+    if (heroImage || history.length > 0 || compareUrl) {
+      if (history.length > 0) {
+        if (history.length === 1) {
+          // 2 levels deep: toggle between original sketch (index 0) and current design
+          const totalStates = 2;
+          setCurrentHistoryIndex((currentIndex) => {
+            const actualCurrentIndex = currentHistoryIndex;
+            const newIndex = (actualCurrentIndex + 1) % totalStates;
+            const willShowSketch = newIndex < history.length;
+            setShowOriginalSketch(willShowSketch);
+            return newIndex;
+          });
+        } else {
+          // 3+ levels deep: only toggle between previous image (last iteration) and current design
+          const previousIndex = history.length - 1; // Last iteration (not original sketch)
+          setCurrentHistoryIndex((currentIndex) => {
+            const actualCurrentIndex = currentHistoryIndex;
+            if (actualCurrentIndex === history.length) {
+              // Currently showing current design, switch to previous iteration
+              setShowOriginalSketch(true);
+              return previousIndex;
+            } else {
+              // Currently showing previous iteration, switch back to current design
+              setShowOriginalSketch(false);
+              return history.length;
+            }
+          });
+        }
+      } else if (compareUrl) {
+        // No explicit history, but we do have a sticky compare (server or local sketch)
+        setShowOriginalSketch(!showOriginalSketch);
+      }
+    }
+  }, [heroSession, currentSession, heroImage, originalSketch, currentHistoryIndex, showOriginalSketch]);
+
   // Keyboard shortcuts (kept on container for learnability)
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -725,48 +768,8 @@ export default function App() {
       navigateHero('next');
     }
     if (e.key === ' ') {
-      // Allow spacebar comparison in hero mode OR when there's controlnet comparison data
-      const activeSession = heroSession || currentSession;
-      const historySession = activeSession === heroSession ? heroSession : currentSession;
-      const history = historySession?.controlnetHistory || [];
-      const compareUrl = historySession?.compareAgainstUrl || originalSketch || '';
-      
-      // Only proceed if we're in hero mode OR have comparison data available
-      if (heroImage || history.length > 0 || compareUrl) {
-        e.preventDefault();
-
-        if (history.length > 0) {
-          if (history.length === 1) {
-            // 2 levels deep: toggle between original sketch (index 0) and current design
-            const totalStates = 2;
-            setCurrentHistoryIndex((currentIndex) => {
-              const actualCurrentIndex = currentHistoryIndex;
-              const newIndex = (actualCurrentIndex + 1) % totalStates;
-              const willShowSketch = newIndex < history.length;
-              setShowOriginalSketch(willShowSketch);
-              return newIndex;
-            });
-          } else {
-            // 3+ levels deep: only toggle between previous image (last iteration) and current design
-            const previousIndex = history.length - 1; // Last iteration (not original sketch)
-            setCurrentHistoryIndex((currentIndex) => {
-              const actualCurrentIndex = currentHistoryIndex;
-              if (actualCurrentIndex === history.length) {
-                // Currently showing current design, switch to previous iteration
-                setShowOriginalSketch(true);
-                return previousIndex;
-              } else {
-                // Currently showing previous iteration, switch back to current design
-                setShowOriginalSketch(false);
-                return history.length;
-              }
-            });
-          }
-        } else if (compareUrl) {
-          // No explicit history, but we do have a sticky compare (server or local sketch)
-          setShowOriginalSketch(!showOriginalSketch);
-        }
-      }
+      e.preventDefault();
+      handleSpacebarToggle();
     }
   };
 
@@ -1032,7 +1035,7 @@ export default function App() {
           </button>
 
           {/* Image counter + spacebar helper */}
-          <div className="hero-counter">
+          <div className="hero-counter" onClick={handleSpacebarToggle} style={{ cursor: 'pointer' }}>
             {heroIndex + 1} / {(heroSession || currentSession)?.images.length || 0}
             {isMobile && (
               <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem' }}>Swipe to navigate</div>
@@ -1067,7 +1070,7 @@ export default function App() {
                     </div>
                     <div>
                       <span style={{ background: 'rgba(255,107,53,0.2)', padding: '2px 6px', borderRadius: '4px' }}>
-                        SPACE
+                        SPACE or CLICK
                       </span>{' '}
                       Show {nextLabel}
                     </div>
@@ -1078,7 +1081,7 @@ export default function App() {
                   <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem', color: '#ff6b35' }}>
                     <div>
                       <span style={{ background: 'rgba(255,107,53,0.2)', padding: '2px 6px', borderRadius: '4px' }}>
-                        SPACE
+                        SPACE or CLICK
                       </span>{' '}
                       Toggle compare
                     </div>
