@@ -15,6 +15,12 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
  * - Removed console logs (frontend ESLint).
  * - Fixed stale-closure risks by including dependencies where needed.
  * - Small, targeted helpers for repeated state operations.
+ *
+ * ✨ Oct 2025: Draw Mode upgrades
+ * - Upload existing drawing (button, drag & drop, or paste) → loads into canvas (contain fit, white background)
+ * - Download current drawing (PNG)
+ * - Keyboard shortcuts: ⌘/Ctrl+O (upload), ⌘/Ctrl+S (download)
+ * - Subtle DnD overlay and live region announcements
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL
@@ -179,6 +185,10 @@ export default function App() {
   const [originalControlBlob, setOriginalControlBlob] = useState<Blob | null>(null);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState(0);
   const [showOriginalSketch, setShowOriginalSketch] = useState(false);
+
+  // NEW: Draw Mode I/O
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   // Calligraphy extras
   const [lastPos, setLastPos] = useState<{ x: number; y: number } | null>(null);
@@ -538,7 +548,6 @@ export default function App() {
               const r = await fetch(sourceImageUrl);
               controlBlob = await r.blob();
             } catch (err) {
-              console.warn('Failed to fetch selected image for controlnet:', err);
               // Fall back to original drawing if fetch fails
               controlBlob = originalControlBlob;
             }
@@ -773,7 +782,7 @@ export default function App() {
     }
   };
 
-  /* ---------- Drawing (unchanged visuals/feel) ---------- */
+  /* ---------- Drawing (unchanged visuals/feel) + Upload/Download ---------- */
 
   const getEventPosition = (
     e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
@@ -863,16 +872,17 @@ export default function App() {
       const halfWidth = currentWidth / 2;
       const tiltOffset = halfWidth * 0.4;
 
-      ctx.save();
-      ctx.fillStyle = drawColor;
-      ctx.beginPath();
-      ctx.moveTo(lastPos.x - tiltOffset, lastPos.y - halfWidth);
-      ctx.lineTo(lastPos.x + tiltOffset, lastPos.y + halfWidth);
-      ctx.lineTo(x + tiltOffset, y + halfWidth);
-      ctx.lineTo(x - tiltOffset, y - halfWidth);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
+      const ctx2 = ctx; // alias
+      ctx2.save();
+      ctx2.fillStyle = drawColor;
+      ctx2.beginPath();
+      ctx2.moveTo(lastPos.x - tiltOffset, lastPos.y - halfWidth);
+      ctx2.lineTo(lastPos.x + tiltOffset, lastPos.y + halfWidth);
+      ctx2.lineTo(x + tiltOffset, y + halfWidth);
+      ctx2.lineTo(x - tiltOffset, y - halfWidth);
+      ctx2.closePath();
+      ctx2.fill();
+      ctx2.restore();
 
       const now = Date.now();
       setStrokeHistory(prev => [...prev, { x, y, pressure: normalizedSpeed, time: now }]);
@@ -942,6 +952,134 @@ export default function App() {
       setIsDrawMode(false);
       await startGenerationWithControlnet(visionPrompt.trim(), selectedStyle, file, dataUrl);
     }, 'image/png');
+  };
+
+  // ---------- NEW: Draw Mode — Upload/Download helpers ----------
+
+  /** Contain-fit an image into the canvas while preserving aspect ratio */
+  const drawImageContain = (img: HTMLImageElement) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+
+    const cw = canvas.width;
+    const ch = canvas.height;
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+
+    const scale = Math.min(cw / iw, ch / ih);
+    const dw = Math.round(iw * scale);
+    const dh = Math.round(ih * scale);
+    const dx = Math.round((cw - dw) / 2);
+    const dy = Math.round((ch - dh) / 2);
+
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, cw, ch);
+
+    ctx.imageSmoothingEnabled = true;
+    // @ts-expect-error TS lib may not know this union type
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, dx, dy, dw, dh);
+
+    // Reset stroke/paint state
+    setDrips([]);
+    setStrokeHistory([]);
+  };
+
+  /** Load a File (image/*) into the canvas */
+  const loadFileIntoCanvas = (file: File) => {
+    if (!file || !file.type.startsWith('image/')) {
+      announce('Unsupported file type — please use an image');
+      return;
+    }
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      drawImageContain(img);
+      URL.revokeObjectURL(objectUrl);
+      announce('Image loaded into canvas');
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      announce('Failed to load image');
+    };
+    img.src = objectUrl;
+  };
+
+  /** Hidden input → click to open */
+  const openFilePicker = () => fileInputRef.current?.click();
+
+  /** Input change handler */
+  const handleFileSelected: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+    const file = e.target.files?.[0];
+    if (file) loadFileIntoCanvas(file);
+    // Reset input value so selecting the same file again triggers change
+    e.currentTarget.value = '';
+  };
+
+  /** Drag & drop handlers */
+  const handleCanvasDragOver: React.DragEventHandler<HTMLCanvasElement> = (e) => {
+    e.preventDefault();
+    setIsDraggingOver(true);
+  };
+  const handleCanvasDragLeave: React.DragEventHandler<HTMLCanvasElement> = (e) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+  };
+  const handleCanvasDrop: React.DragEventHandler<HTMLCanvasElement> = (e) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) loadFileIntoCanvas(file);
+  };
+
+  /** Paste-from-clipboard support (e.g., from screenshots) */
+  const handlePaste: React.ClipboardEventHandler<HTMLDivElement> = (e) => {
+    const items = e.clipboardData?.items || [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.kind === 'file') {
+        const f = it.getAsFile();
+        if (f) {
+          e.preventDefault();
+          loadFileIntoCanvas(f);
+          return;
+        }
+      }
+    }
+  };
+
+  /** Download current canvas as PNG */
+  const handleDownloadDrawing = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const date = new Date().toISOString().replace(/[:.]/g, '-');
+      a.href = url;
+      a.download = `sogni-drawing-${date}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 800);
+      announce('Drawing downloaded');
+    }, 'image/png');
+  };
+
+  /** Draw-mode keyboard shortcuts: ⌘/Ctrl+O (open), ⌘/Ctrl+S (save) */
+  const handleDrawKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
+    const key = e.key.toLowerCase();
+    if ((e.metaKey || e.ctrlKey) && key === 'o') {
+      e.preventDefault();
+      openFilePicker();
+    }
+    if ((e.metaKey || e.ctrlKey) && key === 's') {
+      e.preventDefault();
+      handleDownloadDrawing();
+    }
   };
 
   /* ---------- Render ---------- */
@@ -1158,7 +1296,11 @@ export default function App() {
       {/* Draw Mode */}
       {isDrawMode && (
         <div className="draw-mode">
-          <div className="draw-center">
+          <div
+            className="draw-center"
+            onKeyDown={handleDrawKeyDown}
+            onPaste={handlePaste}
+          >
             <div className="draw-controls">
               <input
                 type="text"
@@ -1229,7 +1371,25 @@ export default function App() {
                     <span>{brushSize}px</span>
                   </div>
 
-                  <button onClick={clearCanvas} className="clear-btn">
+                  {/* NEW: Upload / Download buttons (match existing tool button aesthetics) */}
+                  <div className="io-buttons" style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      className="tool-btn"
+                      onClick={openFilePicker}
+                      title="Upload image (⌘/Ctrl+O)"
+                    >
+                      ⬆️
+                    </button>
+                    <button
+                      className="tool-btn"
+                      onClick={handleDownloadDrawing}
+                      title="Download PNG (⌘/Ctrl+S)"
+                    >
+                      ⬇️
+                    </button>
+                  </div>
+
+                  <button onClick={clearCanvas} className="clear-btn" title="Clear canvas">
                     🗑️
                   </button>
                 </div>
@@ -1240,19 +1400,65 @@ export default function App() {
               </button>
             </div>
 
-            <canvas
-              ref={canvasRef}
-              width={1024}
-              height={1024}
-              className="drawing-canvas"
-              onMouseDown={startDrawing}
-              onMouseMove={draw}
-              onMouseUp={stopDrawing}
-              onMouseLeave={stopDrawing}
-              onTouchStart={startDrawing}
-              onTouchMove={draw}
-              onTouchEnd={stopDrawing}
+            {/* Hidden input for file picker */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileSelected}
+              style={{ display: 'none' }}
             />
+
+            {/* Canvas with DnD & subtle overlay */}
+            <div className="drawing-canvas-wrapper" style={{ position: 'relative' }}>
+              <canvas
+                ref={canvasRef}
+                width={1024}
+                height={1024}
+                className="drawing-canvas"
+                onMouseDown={startDrawing}
+                onMouseMove={draw}
+                onMouseUp={stopDrawing}
+                onMouseLeave={stopDrawing}
+                onTouchStart={startDrawing}
+                onTouchMove={draw}
+                onTouchEnd={stopDrawing}
+                onDragOver={handleCanvasDragOver}
+                onDragLeave={handleCanvasDragLeave}
+                onDrop={handleCanvasDrop}
+              />
+              {isDraggingOver && (
+                <div
+                  className="drop-overlay"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '12px',
+                    border: '2px dashed #ff6b35',
+                    background: 'rgba(255,107,53,0.1)',
+                    fontWeight: 600,
+                    letterSpacing: 0.3,
+                    pointerEvents: 'none'
+                  }}
+                >
+                  Drop image to load
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                marginTop: '0.5rem',
+                fontSize: '0.8rem',
+                opacity: 0.7,
+                textAlign: 'center'
+              }}
+            >
+              Tip: ⌘/Ctrl+O to upload, ⌘/Ctrl+S to download — you can also paste an image here.
+            </div>
 
             <button className="draw-close" onClick={() => setIsDrawMode(false)} aria-label="Close draw mode">
               ×
