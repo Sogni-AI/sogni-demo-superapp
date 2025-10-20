@@ -40,9 +40,10 @@ done < <(find . \
   -type f \
   ! -path "*/node_modules/*" \
   ! -path "*/cache/*" \
+  ! -path "*/web/dist*" \
   ! -name "package-lock.json" \
   ! -name "*/tests/*" \
-  \( -name "*.ts" -o -name "*.js" -o -name "*.json" -o -name "*.md" -o -name "*.sol" -o -name "*.css" \) \
+  \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.json" -o -name "*.md" -o -name "*.sol" -o -name "*.css" \) \
 )
 echo "Copying concatenated content to clipboard…"
 pbcopy < "$temp_file"

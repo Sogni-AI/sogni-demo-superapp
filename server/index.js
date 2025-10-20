@@ -20,6 +20,12 @@
  *     width: 512, height: 512
  *     numberOfImages: 16
  *     tokenType: 'spark'
+ *
+ * ✨ NEW (Oct 2025): "Sticky compare" for Spacebar toggling
+ * After a ControlNet run (which defines the sketch compare), subsequent refinement runs
+ * (e.g. "more minimal") may not pass a baseImageUrl. Previously this meant no compare context,
+ * so Spacebar didn't work. We now cache the latest compare URL per client and reuse it when
+ * baseImageUrl is absent, so Spacebar continues to toggle correctly.
  */
 
 import dotenv from 'dotenv';
@@ -88,6 +94,40 @@ const sseClients = new Map();
 // Keep a reference to live Project instances (for getResultUrl calls)
 const activeProjects = new Map(); // projectId -> Project
 
+// NEW: store per-project compare context (sketch/parent image)
+const projectContext = new Map(); // projectId -> { compareAgainstUrl?: string, controlImage?: Buffer, mimeType?: string }
+
+/**
+ * NEW: Sticky compare per *client*. This lets us continue using the same compare target
+ * (e.g., the ControlNet sketch) across subsequent refinement runs that don't provide baseImageUrl.
+ *
+ * Keying: best-effort combination (x-client-id header if provided, else IP + Origin + UA)
+ * TTL: 30 minutes, with periodic cleanup (every 5 minutes)
+ */
+const lastCompareByClient = new Map(); // key -> { url: string, ts: number }
+const STICKY_COMPARE_TTL_MS = 30 * 60 * 1000;
+
+function getClientKey(req) {
+  // Prefer an explicit client ID if your FE sets it
+  const explicit = req.headers['x-client-id'];
+  if (typeof explicit === 'string' && explicit.trim()) return `id:${explicit.trim()}`;
+
+  // Fall back to best-effort fingerprint
+  const ip = req.ip || req.socket?.remoteAddress || '0.0.0.0';
+  const origin = req.headers.origin || '';
+  const ua = req.headers['user-agent'] || '';
+  return `ip:${ip}|o:${origin}|ua:${ua}`;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of lastCompareByClient.entries()) {
+    if (!entry?.ts || now - entry.ts > STICKY_COMPARE_TTL_MS) {
+      lastCompareByClient.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
 // Reuse a single Sogni client for simplicity
 let sogniClient = null;
 
@@ -146,15 +186,24 @@ async function getSogniClient() {
   try {
     if (!process.env.SOGNI_USERNAME || !process.env.SOGNI_PASSWORD) {
       console.warn('⚠️  SOGNI_USERNAME or SOGNI_PASSWORD not set. Using demo mode.');
-      console.warn('   Set credentials in server/.env to enable real image generation.');
+      console.warn('   Set credentials in the server/.env to enable real image generation.');
       // Continue without login for demo purposes
     } else {
+      console.log('🔐 Attempting login with username:', process.env.SOGNI_USERNAME);
+      console.log('🌐 Using environment:', process.env.SOGNI_ENV);
+      console.log('📱 Using app ID:', process.env.SOGNI_APP_ID);
       await client.account.login(process.env.SOGNI_USERNAME, process.env.SOGNI_PASSWORD);
       console.log('✅ Logged into Sogni successfully');
     }
   } catch (err) {
     if (ignoreProjectNotFound(err)) return client;
     console.error('❌ Sogni login failed:', err.message);
+    console.error('🔍 Error details:', {
+      code: err.code,
+      status: err.status,
+      response: err.response?.data || err.response,
+      stack: err.stack?.split('\n')[0]
+    });
     console.warn('⚠️  Continuing in demo mode. Set valid credentials to enable image generation.');
   }
 
@@ -501,8 +550,11 @@ function emitJobLifecycle(project, jobIndexById, evt) {
  *   prompt: string,            // required base prompt
  *   style?: string,
  *   refinement?: string,
- *   baseImageUrl?: string,
+ *   baseImageUrl?: string,     // if provided, used as startingImage AND as compare target
  *   seed?: number
+ *
+ *   // NEW: you *may* also pass compareAgainstUrl explicitly if you want to override
+ *   // (e.g., keep comparing to the original sketch): compareAgainstUrl?: string
  * }
  */
 app.post('/api/generate', async (req, res) => {
@@ -512,17 +564,38 @@ app.post('/api/generate', async (req, res) => {
       style = '',
       refinement = '',
       baseImageUrl = '',
-      seed
+      seed,
+      // NEW: allow explicit compare if FE wants to force it
+      compareAgainstUrl: explicitCompare
     } = req.body || {};
 
-    console.log('[Generate] Received request:', { prompt, style, refinement, seed });
+    console.log('[Generate] Received request:', { prompt, style, refinement, seed, baseImageUrl: !!baseImageUrl, explicitCompare: !!explicitCompare });
 
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Missing prompt' });
     }
 
+    // Compute sticky compare for this client (fallback if baseImageUrl is absent)
+    const clientKey = getClientKey(req);
+    const stickyEntry = lastCompareByClient.get(clientKey);
+    const stickyCompareUrl = explicitCompare || stickyEntry?.url || '';
+
     // Create 16 prompt variations for diverse results
     const promptVariations = generatePromptVariations(prompt, style, refinement);
+
+    // Attempt to fetch starting image if provided (image-to-image)
+    let startingImageBuffer = null;
+    if (baseImageUrl) {
+      try {
+        const imgResp = await fetch(baseImageUrl);
+        if (!imgResp.ok) throw new Error(`fetch ${imgResp.status}`);
+        const ab = await imgResp.arrayBuffer();
+        startingImageBuffer = Buffer.from(ab);
+        console.log('[Generate] startingImage fetched from baseImageUrl');
+      } catch (e) {
+        console.warn('[Generate] Failed to fetch baseImageUrl for startingImage, proceeding without it:', e.message);
+      }
+    }
 
     // Create a project on Sogni with fixed defaults + Spark billing - always 16 images
     const createPayload = {
@@ -532,7 +605,8 @@ app.post('/api/generate', async (req, res) => {
       stylePrompt: style,
       disableNSFWFilter: false,
       ...(seed !== undefined && seed !== -1 ? { seed: Number(seed) } : {}),
-      ...RENDER_DEFAULTS
+      ...RENDER_DEFAULTS,
+      ...(startingImageBuffer ? { startingImage: startingImageBuffer, startingImageStrength: 0.35 } : {})
     };
 
     const project = await withRetry(async (client) => {
@@ -548,14 +622,24 @@ app.post('/api/generate', async (req, res) => {
     const projectId = project.id;
     activeProjects.set(projectId, project);
 
-    // Build stable job index map (id -> index) as returned by create()
+    // NEW: compare context for this project
+    // Priority: baseImageUrl (explicit parent design) -> explicitCompare -> stickyCompare -> none
+    const chosenCompare = baseImageUrl || stickyCompareUrl || '';
+    if (chosenCompare) {
+      projectContext.set(projectId, { compareAgainstUrl: chosenCompare });
+    }
+
+    // Respond immediately with projectId + stable jobs[] map + compare context (if any)
     const jobs = Array.isArray(project.jobs) ? project.jobs : [];
     const jobIndexById = new Map(jobs.map((j, i) => [j.id, i]));
 
-    // Respond immediately with projectId + stable jobs[] map
     res.json({
       projectId,
-      jobs: jobs.map((j, i) => ({ id: j.id, index: i }))
+      jobs: jobs.map((j, i) => ({ id: j.id, index: i })),
+      context: {
+        compareAgainstUrl: chosenCompare || null,
+        previousUrl: chosenCompare || null // alias for older UI code
+      }
     });
 
     // Handlers (scoped so we can remove them on completion/failure)
@@ -643,6 +727,7 @@ app.post('/api/generate', async (req, res) => {
         }
 
         const jobInfo = await getJobInfo(project, evt.jobId);
+        const ctx = projectContext.get(projectId);
 
         emitToProject(projectId, {
           type: 'jobCompleted',
@@ -652,7 +737,10 @@ app.post('/api/generate', async (req, res) => {
             positivePrompt: evt.positivePrompt,
             isNSFW: jobInfo.isNSFW
           },
-          proxyUrl: `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(evt.jobId)}`
+          proxyUrl: `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(evt.jobId)}`,
+          // Compare sticks even if this project didn't pass baseImageUrl
+          compareAgainstUrl: ctx?.compareAgainstUrl || null,
+          previousUrl: ctx?.compareAgainstUrl || null // alias
         });
       }
 
@@ -676,7 +764,10 @@ app.post('/api/generate', async (req, res) => {
     function detach() {
       try { sogniClient.projects.off('project', debugProject); } catch {}
       try { sogniClient.projects.off('job', debugJob); } catch {}
-      setTimeout(() => { activeProjects.delete(projectId); }, 10 * 60 * 1000);
+      setTimeout(() => {
+        activeProjects.delete(projectId);
+        projectContext.delete(projectId); // cleanup compare context for this project
+      }, 10 * 60 * 1000);
     }
   } catch (err) {
     if (ignoreProjectNotFound(err)) {
@@ -694,6 +785,7 @@ app.post('/api/generate', async (req, res) => {
 // 1) Uses title (if provided) as the base prompt and appends "ink tattoo concept"
 // 2) No longer emits "formDefaults" that could close/reset your Draw form
 // 3) Emits per-job "jobCompleted" events so images spiral out exactly like non-sketch mode
+// 4) ✨ NEW: Records sticky compare for the client (so subsequent refinements keep Spacebar toggling)
 //
 app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, res) => {
   try {
@@ -782,6 +874,18 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
     activeProjects.set(projectId, project);
     console.log('[Generate ControlNet] Project created:', projectId);
 
+    // NEW: register compare target (the sketch) for spacebar flashing
+    const compareUrl = `/api/compare/${encodeURIComponent(projectId)}`;
+    projectContext.set(projectId, {
+      compareAgainstUrl: compareUrl,
+      controlImage: controlImageBuffer,
+      mimeType: req.file.mimetype || 'image/png'
+    });
+
+    // ✨ NEW: remember "last compare" for this client, so /api/generate can reuse it if needed
+    const ck = getClientKey(req);
+    lastCompareByClient.set(ck, { url: compareUrl, ts: Date.now() });
+
     const jobs = Array.isArray(project.jobs) ? project.jobs : [];
     const jobIndexById = new Map(jobs.map((j, i) => [j.id, i]));
 
@@ -793,7 +897,11 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
     // ✅ Do NOT send "formDefaults" back — this prevents the Draw form from closing/resetting.
     res.json({
       projectId,
-      jobs: jobs.map((j, i) => ({ id: j.id, index: i }))
+      jobs: jobs.map((j, i) => ({ id: j.id, index: i })),
+      context: {
+        compareAgainstUrl: compareUrl,
+        previousUrl: compareUrl // alias for older UI code
+      }
     });
 
     // Handlers — mirror the normal /api/generate behavior so the UI can "spiral out"
@@ -821,9 +929,12 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
             }
 
             if (urls.length) {
+              const ctx = projectContext.get(projectId);
               emitToProject(projectId, {
                 type: 'results',
-                urls
+                urls,
+                compareAgainstUrl: ctx?.compareAgainstUrl || null,
+                previousUrl: ctx?.compareAgainstUrl || null
               });
             }
 
@@ -861,6 +972,7 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
         }
 
         const jobInfo = await getJobInfo(project, evt.jobId);
+        const ctx = projectContext.get(projectId);
 
         emitToProject(projectId, {
           type: 'jobCompleted',
@@ -870,7 +982,9 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
             positivePrompt: evt.positivePrompt,
             isNSFW: jobInfo.isNSFW
           },
-          proxyUrl: `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(evt.jobId)}`
+          proxyUrl: `/api/result/${encodeURIComponent(projectId)}/${encodeURIComponent(evt.jobId)}`,
+          compareAgainstUrl: ctx?.compareAgainstUrl || null,
+          previousUrl: ctx?.compareAgainstUrl || null // alias
         });
       }
 
@@ -894,7 +1008,10 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
     function detach() {
       try { sogniClient.projects.off('project', debugProject); } catch {}
       try { sogniClient.projects.off('job', debugJob); } catch {}
-      setTimeout(() => { activeProjects.delete(projectId); }, 10 * 60 * 1000);
+      setTimeout(() => {
+        activeProjects.delete(projectId);
+        projectContext.delete(projectId); // NEW: cleanup compare context
+      }, 10 * 60 * 1000);
     }
   } catch (err) {
     if (ignoreProjectNotFound(err)) {
@@ -914,6 +1031,7 @@ app.get('/api/progress/:projectId', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // NEW: help proxies not buffer SSE
   res.flushHeaders?.();
 
   // Track client
@@ -959,10 +1077,14 @@ app.get('/api/cancel/:projectId', async (req, res) => {
       }
     });
 
+    // NEW: ensure we drop compare context too
+    projectContext.delete(projectId);
+
     res.json({ ok: true, projectId, cancelled: true });
   } catch (err) {
     if (ignoreProjectNotFound(err)) {
-      return res.json({ ok: true, projectId, cancelled: true });
+      projectContext.delete(req.params.projectId);
+      return res.json({ ok: true, projectId: req.params.projectId, cancelled: true });
     }
     console.error('cancel error', err);
     res.status(500).json({ ok: false, error: err?.message || 'Cancel failed' });
@@ -1005,6 +1127,17 @@ app.get('/api/result/:projectId/:jobId', async (req, res) => {
     console.error('[proxy result] error', err);
     res.status(500).json({ error: 'Failed to proxy result' });
   }
+});
+
+// ---------- Serve the "compare" image (ControlNet sketch) ----------
+app.get('/api/compare/:projectId', (req, res) => {
+  const { projectId } = req.params;
+  const ctx = projectContext.get(projectId);
+  if (!ctx?.controlImage) {
+    return res.status(404).json({ error: 'Compare image not found or expired' });
+  }
+  res.setHeader('Content-Type', ctx.mimeType || 'image/png');
+  res.end(ctx.controlImage);
 });
 
 // ---------- Health ----------
