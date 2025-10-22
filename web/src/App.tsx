@@ -14,6 +14,11 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
  * Oct 2025 fixes:
  * - ✅ Compare toggle during refinement now shows ONLY the last "influence" image (no original sketch)
  * - ✅ Spacebar toggle works reliably in deep hero/refinement UI by keeping focus on the hero container
+ *
+ * Oct 2025 symmetry bugfix:
+ * - ✅ Horizontal symmetry (H) now mirrors across the HORIZONTAL center line (top ↔ bottom)
+ * - ✅ Vertical symmetry (V) now mirrors across the VERTICAL center line (left ↔ right)
+ * - ✅ Rectangle tool used clientY instead of canvas Y; fixed to use canvas coords
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL
@@ -1445,14 +1450,20 @@ export default function App() {
     y: (p1.y + p2.y) / 2
   });
 
+  /**
+   * Symmetry mapping helper
+   *
+   * - symmetryH (Horizontal symmetry)  => mirror across HORIZONTAL center line (top ↔ bottom): y' = h - y
+   * - symmetryV (Vertical symmetry)    => mirror across VERTICAL center line (left ↔ right):   x' = w - x
+   */
   const withSymmetryPoints = (p: { x: number; y: number }) => {
     const canvas = canvasRef.current!;
     const w = canvas.width;
     const h = canvas.height;
     const list = [{ x: p.x, y: p.y }];
-    if (symmetryH) list.push({ x: w - p.x, y: p.y });
-    if (symmetryV) list.push({ x: p.x, y: h - p.y });
-    if (symmetryH && symmetryV) list.push({ x: w - p.x, y: h - p.y });
+    if (symmetryV) list.push({ x: w - p.x, y: p.y });     // left-right mirror (vertical axis)
+    if (symmetryH) list.push({ x: p.x, y: h - p.y });     // top-bottom mirror (horizontal axis)
+    if (symmetryH && symmetryV) list.push({ x: w - p.x, y: h - p.y }); // both
     // Deduplicate very rare overlaps (center lines)
     const key = (pt: { x: number; y: number }) => `${Math.round(pt.x)}|${Math.round(pt.y)}`;
     const seen = new Set<string>();
@@ -1696,17 +1707,28 @@ export default function App() {
       if (!(drawTool === 'square' && startPos && baseImageData)) return;
       ctx.putImageData(baseImageData, 0, 0);
       ctx.fillStyle = drawColor;
+
+      // ❗ Fix: use canvas-space coords for height (was using clientY)
       const width = coords.x - startPos.x;
-      const height = clientY - startPos.y;
+      const height = coords.y - startPos.y;
       ctx.fillRect(startPos.x, startPos.y, width, height);
 
       if (symmetryH || symmetryV) {
         const w = canvas.width;
         const h = canvas.height;
-        const rects: Array<{ sx:number; sy:number; ex:number; ey:number }> = [{ sx: startPos.x, sy: startPos.y, ex: coords.x, ey: coords.y }];
 
-        if (symmetryH) rects.push({ sx: w - startPos.x, sy: startPos.y, ex: w - coords.x, ey: coords.y });
-        if (symmetryV) rects.push({ sx: startPos.x, sy: h - startPos.y, ex: coords.x, ey: h - coords.y });
+        // Base rect (original drag)
+        const rects: Array<{ sx:number; sy:number; ex:number; ey:number }> = [
+          { sx: startPos.x, sy: startPos.y, ex: coords.x, ey: coords.y }
+        ];
+
+        // Vertical symmetry (V): left ↔ right mirror (vertical axis) => reflect X
+        if (symmetryV) rects.push({ sx: w - startPos.x, sy: startPos.y, ex: w - coords.x, ey: coords.y });
+
+        // Horizontal symmetry (H): top ↔ bottom mirror (horizontal axis) => reflect Y
+        if (symmetryH) rects.push({ sx: startPos.x, sy: h - startPos.y, ex: coords.x, ey: h - coords.y });
+
+        // Both
         if (symmetryH && symmetryV) rects.push({ sx: w - startPos.x, sy: h - startPos.y, ex: w - coords.x, ey: h - coords.y });
 
         rects.forEach((r, idx) => {
@@ -1758,8 +1780,14 @@ export default function App() {
       // Symmetric strokes
       const w = canvas.width;
       const h = canvas.height;
-      if (symmetryH) drawCalPoly(w - lastPos.x, lastPos.y, w - x, y);
-      if (symmetryV) drawCalPoly(lastPos.x, h - lastPos.y, x, h - y);
+
+      // Vertical symmetry (V) => reflect X (left ↔ right)
+      if (symmetryV) drawCalPoly(w - lastPos.x, lastPos.y, w - x, y);
+
+      // Horizontal symmetry (H) => reflect Y (top ↔ bottom)
+      if (symmetryH) drawCalPoly(lastPos.x, h - lastPos.y, x, h - y);
+
+      // Both
       if (symmetryH && symmetryV) drawCalPoly(w - lastPos.x, h - lastPos.y, w - x, h - y);
 
       const now = Date.now();
