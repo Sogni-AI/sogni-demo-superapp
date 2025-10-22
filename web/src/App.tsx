@@ -10,6 +10,10 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
  * - ✅ Pressure-aware brush (stylus), keyboard shortcuts, ARIA, safe white-background exports (no transparency)
  * - ✅ Desktop/tablet/mobile responsive layout: new pro grid (top bar + left rail + right panel) on desktop
  * - ✅ BRUSH FIX: coalesced pointer events + gap-bridging so fast strokes don’t look dotted
+ *
+ * Oct 2025 fixes:
+ * - ✅ Compare toggle during refinement now shows ONLY the last "influence" image (no original sketch)
+ * - ✅ Spacebar toggle works reliably in deep hero/refinement UI by keeping focus on the hero container
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL
@@ -1257,6 +1261,19 @@ export default function App() {
     return false;
   };
 
+  /**
+   * Helper: index of the last non-original entry in ControlNet history (i.e., the most recent "influence" image).
+   * Returns -1 if none found.
+   */
+  const getLastNonOriginalIndex = useCallback((hist: ControlnetIteration[] | undefined) => {
+    if (!hist || hist.length === 0) return -1;
+    for (let i = hist.length - 1; i >= 0; i--) {
+      const it = hist[i];
+      if (it && !it.isOriginalSketch && it.imageUrl) return i;
+    }
+    return -1;
+  }, []);
+
   // Spacebar toggle (uses state updaters; safe across renders)
   const handleSpacebarToggle = useCallback(() => {
     const activeSession = heroSession || currentSession;
@@ -1264,29 +1281,39 @@ export default function App() {
     const history = historySession?.controlnetHistory || [];
     const compareUrl = historySession?.compareAgainstUrl || originalSketch || '';
 
-    // Always allow spacebar toggle if there's comparison data available
+    // Special case: in hero refinement, toggle ONLY between current design and the LAST influence image
+    if (heroSession && history.length > 0) {
+      const lastIdx = getLastNonOriginalIndex(history);
+      if (lastIdx !== -1 || compareUrl) {
+        // Two states only: parent influence <-> current design
+        if (lastIdx !== -1) setCurrentHistoryIndex(lastIdx);
+        setShowOriginalSketch(prev => !prev);
+        return;
+      }
+    }
+
+    // Default behavior (non-hero or no explicit influence available)
     if (history.length > 0 || compareUrl) {
       if (history.length > 0) {
         if (history.length === 1) {
-          const totalStates = 2;
-          setCurrentHistoryIndex(prevIndex => {
-            const newIndex = (prevIndex + 1) % totalStates;
-            setShowOriginalSketch(newIndex < history.length);
-            return newIndex;
-          });
+          // Only one thing to compare against -> 2 states total
+          setCurrentHistoryIndex(0);
+          setShowOriginalSketch(prev => !prev);
         } else {
+          // Multiple history entries -> cycle all + current design
           const totalStates = history.length + 1;
           setCurrentHistoryIndex(prevIndex => {
-            const newIndex = (prevIndex + 1) % totalStates;
-            setShowOriginalSketch(newIndex < history.length);
-            return newIndex;
+            const next = (prevIndex + 1) % totalStates;
+            setShowOriginalSketch(next < history.length);
+            return next;
           });
         }
-      } else if (compareUrl) {
+      } else {
+        // No history, but have an explicit compare URL (sticky compare)
         setShowOriginalSketch(prev => !prev);
       }
     }
-  }, [heroSession, currentSession, heroImage, originalSketch]);
+  }, [heroSession, currentSession, originalSketch, getLastNonOriginalIndex]);
 
   // Document-level spacebar listener for toggle functionality
   useEffect(() => {
@@ -1712,6 +1739,8 @@ export default function App() {
       const tiltOffset = halfWidth * 0.4;
 
       const drawCalPoly = (ax:number, ay:number, bx:number, by:number) => {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
         ctx.save();
         ctx.fillStyle = drawColor;
         ctx.beginPath();
@@ -2070,20 +2099,34 @@ export default function App() {
               const history = historySession?.controlnetHistory || [];
               const stickyCompare = historySession?.compareAgainstUrl || originalSketch || '';
 
-              if (showOriginalSketch && (history.length > 0 || stickyCompare)) {
-                let compareSrc = stickyCompare;
-                let altText = 'Compare image';
-                if (history.length > 0) {
-                  const currentIteration = history[currentHistoryIndex];
-                  if (currentIteration) {
-                    compareSrc = currentIteration.imageUrl || stickyCompare;
-                    altText = currentIteration.isOriginalSketch
-                      ? 'Original sketch'
-                      : `Iteration ${currentHistoryIndex}`;
+              if (showOriginalSketch) {
+                // In refinement hero, prefer the LAST non-original "influence" image only
+                if (heroSession && history.length > 0) {
+                  const lastIdx = getLastNonOriginalIndex(history);
+                  if (lastIdx !== -1) {
+                    const src = history[lastIdx]!.imageUrl;
+                    return <img src={src} alt="Parent influence" className="hero-main-image" />;
+                  }
+                  if (stickyCompare) {
+                    return <img src={stickyCompare} alt="Compare image" className="hero-main-image" />;
                   }
                 }
-                return <img src={compareSrc} alt={altText} className="hero-main-image" />;
+
+                // Default: respect current index or sticky compare
+                if (history.length > 0 && currentHistoryIndex < history.length) {
+                  const currentIteration = history[currentHistoryIndex];
+                  if (currentIteration) {
+                    const src = currentIteration.imageUrl || stickyCompare;
+                    const alt = currentIteration.isOriginalSketch ? 'Original sketch' : `Previous iteration`;
+                    return <img src={src} alt={alt} className="hero-main-image" />;
+                  }
+                }
+                if (stickyCompare) {
+                  return <img src={stickyCompare} alt="Compare image" className="hero-main-image" />;
+                }
               }
+
+              // Default: show the current hero image
               return <img src={heroImage.url} alt="Selected tattoo design" className="hero-main-image" />;
             })()}
 
@@ -2121,7 +2164,7 @@ export default function App() {
                     Click to edit
                   </span>
                 </div>
-                <button className="hero-prompt-close" onClick={closeHeroMode} aria-label="Close hero view">
+                <button className="hero-prompt-close" onClick={closeHeroMode} aria-label="Close hero view" tabIndex={-1}>
                   ×
                 </button>
               </div>
@@ -2154,18 +2197,18 @@ export default function App() {
                     Click to edit
                   </span>
                 </div>
-                <button className="hero-prompt-close" onClick={closeHeroMode} aria-label="Close hero view">
+                <button className="hero-prompt-close" onClick={closeHeroMode} aria-label="Close hero view" tabIndex={-1}>
                   ×
                 </button>
               </div>
             )}
           </div>
 
-          {/* Navigation arrows */}
-          <button className="hero-nav hero-nav-left" onClick={() => navigateHero('prev')} aria-label="Previous image">
+          {/* Navigation arrows (non-focusable so spacebar stays global) */}
+          <button className="hero-nav hero-nav-left" onClick={() => navigateHero('prev')} aria-label="Previous image" tabIndex={-1}>
             ←
           </button>
-          <button className="hero-nav hero-nav-right" onClick={() => navigateHero('next')} aria-label="Next image">
+          <button className="hero-nav hero-nav-right" onClick={() => navigateHero('next')} aria-label="Next image" tabIndex={-1}>
             →
           </button>
 
@@ -2198,6 +2241,33 @@ export default function App() {
               const history = historySession?.controlnetHistory || [];
               const stickyCompare = historySession?.compareAgainstUrl || originalSketch || '';
 
+              // In refinement hero, show a clean 2-state helper (parent influence <-> current)
+              if (heroSession && (history.length > 0 || stickyCompare)) {
+                const lastIdx = getLastNonOriginalIndex(history);
+                const hasCompare = lastIdx !== -1 || !!stickyCompare;
+                if (hasCompare) {
+                  const currentLabel = showOriginalSketch ? 'Parent influence' : 'Current design';
+                  const nextLabel = showOriginalSketch ? 'current design' : 'parent influence';
+                  return (
+                    <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem', color: '#ff6b35' }}>
+                      <div style={{ marginBottom: '2px' }}>
+                        {currentLabel}
+                        <span style={{ opacity: 0.6, marginLeft: '8px' }}>
+                          ({showOriginalSketch ? '1' : '2'}/2)
+                        </span>
+                      </div>
+                      <div>
+                        <span style={{ background: 'rgba(255,107,53,0.2)', padding: '2px 6px', borderRadius: '4px' }}>
+                          SPACE or CLICK
+                        </span>{' '}
+                        Show {nextLabel}
+                      </div>
+                    </div>
+                  );
+                }
+              }
+
+              // Original helper (non-hero or no specific influence available)
               if (history.length > 0) {
                 const totalStates = history.length + 1;
                 const nextIndex = (currentHistoryIndex + 1) % totalStates;
