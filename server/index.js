@@ -473,7 +473,10 @@ function generatePromptVariations(basePrompt, style = '', refinement = '') {
     // Flux Schnell optimal prompt structure: subject, style, composition, quality
     let prompt = basePrompt;
 
-    if (style) {
+    if (style && style.toLowerCase() === 'simple ink') {
+      // Use the same style as controlnet for consistency
+      prompt += ', bold black ink tattoo design, thick black lines, high contrast, solid black and white, traditional tattoo style, clean white background';
+    } else if (style) {
       prompt += `, ${style.toLowerCase()} tattoo`;
     } else {
       prompt += ' tattoo';
@@ -481,7 +484,13 @@ function generatePromptVariations(basePrompt, style = '', refinement = '') {
 
     if (refinement) prompt += `, ${refinement}`;
     prompt += `, ${composition}, ${quality}`;
-    prompt += ', tattoo design, black ink on white background';
+    
+    // Only add generic ending if not using Simple Ink (which already includes background)
+    if (style && style.toLowerCase() === 'simple ink') {
+      // Simple Ink already includes background styling
+    } else {
+      prompt += ', tattoo design, black ink on white background';
+    }
     variations.push(prompt);
   }
 
@@ -807,8 +816,20 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
       return res.status(400).json({ error: 'Missing control image' });
     }
 
-    // ——— Final positive prompt (enhanced for bold ink tattoo results):
-    let finalPrompt = `${baseText}, bold black ink tattoo design, thick black lines, high contrast, solid black and white, traditional tattoo style, clean white background`;
+    console.log('[Generate ControlNet] Style received:', JSON.stringify(style));
+
+    // ——— Final positive prompt:
+    let finalPrompt;
+    const normalizedStyle = String(style || '').trim().toLowerCase();
+    if (normalizedStyle === 'simple ink' || normalizedStyle === '' || !style) {
+      // Use the Simple Ink style (default for controlnet or when explicitly selected)
+      finalPrompt = `${baseText}, bold black ink tattoo design, thick black lines, high contrast, solid black and white, traditional tattoo style, clean white background`;
+      console.log('[Generate ControlNet] Using Simple Ink style (default or selected)');
+    } else {
+      // Use the selected style with tattoo suffix
+      finalPrompt = `${baseText}, ${normalizedStyle} tattoo`;
+      console.log('[Generate ControlNet] Using custom style:', normalizedStyle);
+    }
     
     // Add refinement if provided
     if (refinement) {
