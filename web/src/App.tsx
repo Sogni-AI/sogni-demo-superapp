@@ -776,7 +776,6 @@ export default function App() {
       const img = new Image();
       img.onload = () => {
         ctx.imageSmoothingEnabled = true;
-        // @ts-expect-error TS lib may not know this union type
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       };
@@ -1947,7 +1946,6 @@ export default function App() {
     ctx.fillRect(0, 0, cw, ch);
 
     ctx.imageSmoothingEnabled = true;
-    // @ts-expect-error TS lib may not know this union type
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, dx, dy, dw, dh);
 
