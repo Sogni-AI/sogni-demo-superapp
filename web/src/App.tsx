@@ -3,29 +3,222 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
 /**
  * Sogni Tattoo Ideas — Teaching Demo (Simplified)
  *
- * Goals of this pass:
- * - Keep the UI and behavior identical.
- * - Reduce duplication (especially around SSE handling).
- * - Make "compare/spacebar" logic obvious and robust.
- * - Keep everything in one file (easy to study) but factor helpers clearly.
- *
- * Notable changes:
- * - Single SSE attach/update helper (removes repeat code).
- * - Clear "sticky compare" fallback order: controlnetHistory → compareAgainstUrl (server) → originalSketch.
- * - Removed console logs (frontend ESLint).
- * - Fixed stale-closure risks by including dependencies where needed.
- * - Small, targeted helpers for repeated state operations.
- *
- * ✨ Oct 2025: Draw Mode upgrades
- * - Upload existing drawing (button, drag & drop, or paste) → loads into canvas (contain fit, white background)
- * - Download current drawing (PNG)
- * - Keyboard shortcuts: ⌘/Ctrl+O (upload), ⌘/Ctrl+S (download)
- * - Subtle DnD overlay and live region announcements
+ * This edit focuses on:
+ * - ✅ Pen-down persists across canvas boundaries (Pointer Events + capture)
+ * - ✅ Stop drawing on pointerup/cancel anywhere (window fallback)
+ * - ✅ Square canvas (CSS aspect-ratio) + DPR backing store preserved
+ * - ✅ Spacebar while typing still works; compare toggle still stable
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL
   ? String(import.meta.env.VITE_API_BASE_URL).replace(/\/+$/, '')
   : '';
+
+/* ---------- Design Tokens (Mobile-first, DRY) ---------- */
+
+const MobileStyles = () => (
+  <style>{`
+    :root {
+      --brand: #ff6b35;
+      --bg-app: #0e0f11;
+      --bg-app-2: #101113;
+      --card-bg: #ffffff;
+      --text-strong: #0f1115;
+      --text: #dee1e7;
+      --text-muted: #9aa0a6;
+
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 24px;
+      --space-8: 32px;
+
+      --radius-2: 12px;
+      --radius-3: 16px;
+
+      --shadow-1: 0 4px 12px rgba(0,0,0,.18);
+      --shadow-2: 0 10px 30px rgba(0,0,0,.22);
+      --border-soft: 1px solid rgba(0,0,0,.06);
+      --border-soft-dark: 1px solid rgba(255,255,255,.06);
+    }
+
+    /* Fullscreen shell for Draw Mode (native app vibe) */
+    .draw-mode {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background:
+        radial-gradient(1200px 800px at 50% -10%, var(--bg-app-2) 0%, var(--bg-app) 60%, #0b0c0e 100%);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      padding: calc(env(safe-area-inset-top) + var(--space-4)) var(--space-4)
+               calc(env(safe-area-inset-bottom) + var(--space-6));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    /* Center column with mobile maximum; scales up on tablets/desktop */
+    .draw-center {
+      width: 100%;
+      max-width: 520px; /* iPhone "app card" width */
+      display: grid;
+      grid-template-rows: auto auto auto 1fr auto;
+      row-gap: var(--space-4);
+      position: relative;
+    }
+
+    /* Header (app bar) */
+    .mobile-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+    }
+    .mobile-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: .2px;
+      color: #f3f5f9;
+      margin: 0 auto;
+    }
+    .icon-btn {
+      inline-size: 40px;
+      block-size: 40px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 12px;
+      border: var(--border-soft-dark);
+      background: rgba(255,255,255,.04);
+      color: #f3f5f9;
+      cursor: pointer;
+      transition: transform .06s ease;
+    }
+    .icon-btn:active { transform: scale(.98); }
+
+    /* Input + tools */
+    .vision-input {
+      width: 100%;
+      height: 44px;
+      border-radius: 12px;
+      border: var(--border-soft-dark);
+      background: rgba(255,255,255,.05);
+      color: #f3f5f9;
+      padding: 0 var(--space-3);
+      outline: none;
+    }
+    .draw-controls .tools-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--space-3);
+      align-items: center;
+    }
+    .tool-buttons, .color-buttons, .size-control, .io-buttons {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    .tool-btn, .color-btn, .clear-btn {
+      min-width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      border: var(--border-soft-dark);
+      background: rgba(255,255,255,.05);
+      color: #f3f5f9;
+      display: inline-grid;
+      place-items: center;
+      cursor: pointer;
+      transition: transform .06s ease, background .2s ease;
+    }
+    .tool-btn.active, .color-btn.active {
+      background: rgba(255,255,255,.12);
+      outline: 1px solid rgba(255,255,255,.12);
+    }
+    .tool-btn:active, .color-btn:active, .clear-btn:active { transform: scale(.98); }
+    .color-btn.white { color: #fff; }
+    .color-btn.black { color: #000; background: #fff; }
+    .size-control label { opacity: .75; margin-right: var(--space-2); }
+    .size-control span { opacity: .75; margin-left: var(--space-2); }
+
+    /* Canvas card */
+    .mobile-card {
+      background: transparent;
+      color: var(--text);
+      border-radius: var(--radius-3);
+      box-shadow: none;
+      padding: 0;
+      border: none;
+    }
+    .drawing-canvas-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      margin-inline: auto;
+      position: relative;
+    }
+    .drawing-canvas {
+      display: block;
+      margin: 0 auto;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 1 / 1; /* 🔒 always square in CSS */
+      border-radius: 14px;
+      box-shadow:
+        inset 0 0 0 1px rgba(0,0,0,.06),
+        0 1px 0 rgba(255,255,255,.5);
+      touch-action: none; /* ensure no scroll/zoom interference while drawing */
+      user-select: none;
+      -webkit-user-select: none;
+      background: #ffffff;
+    }
+
+    /* Subtle drop target */
+    .drop-overlay { border-radius: 14px !important; }
+
+    /* Footer CTA */
+    .create-btn {
+      width: 100%;
+      height: 48px;
+      border-radius: 12px;
+      background: var(--brand);
+      color: #fff;
+      font-weight: 700;
+      letter-spacing: .2px;
+      border: none;
+      box-shadow: 0 8px 20px rgba(255,107,53,.35);
+    }
+    .create-btn:disabled { opacity: .6; box-shadow: none; }
+
+    /* Legacy close visible on desktop */
+    .draw-close {
+      position: absolute;
+      top: var(--space-4);
+      right: var(--space-4);
+      inline-size: 40px;
+      block-size: 40px;
+      border-radius: 12px;
+      border: var(--border-soft-dark);
+      background: rgba(255,255,255,.05);
+      color: #f3f5f9;
+      display: none;
+    }
+
+    /* Non-hero list images polish (keeps perf) */
+    .circle-img, .orbit-img { border-radius: 12px; background: #fff; }
+
+    @media (min-width: 768px) {
+      .draw-center { max-width: 680px; }
+      .draw-close { display: inline-grid; place-items: center; }
+      .draw-controls .tools-row {
+        grid-template-columns: 1fr auto auto 1fr auto auto;
+      }
+    }
+  `}</style>
+);
 
 /* ---------- Data & Constants ---------- */
 
@@ -83,6 +276,9 @@ const HERO_REFINEMENT_OPTIONS = [
   { label: 'More Variations', value: 'same concept, different interpretation', lockSeed: false }
 ];
 
+// Max device pixel ratio to cap canvas buffers (perf/memory)
+const MAX_DPR = 2;
+
 /* ---------- Types ---------- */
 
 type TattooImage = {
@@ -119,7 +315,7 @@ type GenerationSession = {
   compareAgainstUrl?: string;
 };
 
-/* ---------- Small Utilities (kept inline for learnability) ---------- */
+/* ---------- Small Utilities ---------- */
 
 const shuffleArray = <T,>(array: T[]): T[] => {
   const shuffled = [...array];
@@ -130,32 +326,23 @@ const shuffleArray = <T,>(array: T[]): T[] => {
   return shuffled;
 };
 const STYLES = shuffleArray(BASE_STYLES);
-
 const clamp01 = (x: number) => (Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : 0);
-
 /** Generates a random seed for reproducibility when needed */
 const randomSeed = () => Math.floor(Math.random() * 1000000);
-
-/** Factory for image IDs / session IDs (kept stable across renders) */
-function createIdFactories() {
-  const sessionCounter = { current: 0 };
-  const imageCounter = { current: 0 };
-  return {
-    nextSessionId: () => `session_${++sessionCounter.current}`,
-    nextImageId: () => `image_${++imageCounter.current}`
-  };
-}
-
-/** Handy helper: reset controlnet history cycling to "current design" */
+/** Reset controlnet history index to "current design" */
 function resetHistoryIndexFor(history: ControlnetIteration[] | undefined) {
   if (!history?.length) return 0;
-  return history.length; // last index (history length) represents "current design"
+  return history.length;
 }
 
 /* ---------- App Component ---------- */
 
 export default function App() {
-  const { nextSessionId, nextImageId } = createIdFactories();
+  // Stable ID counters across re-renders
+  const sessionIdRef = useRef(0);
+  const imageIdRef = useRef(0);
+  const nextSessionId = useCallback(() => `session_${++sessionIdRef.current}`, []);
+  const nextImageId = useCallback(() => `image_${++imageIdRef.current}`, []);
 
   // Core app state
   const [prompt, setPrompt] = useState(
@@ -181,6 +368,7 @@ export default function App() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
   const [baseImageData, setBaseImageData] = useState<ImageData | null>(null);
+  const [isOutsideCanvas, setIsOutsideCanvas] = useState(false);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
   const [originalControlBlob, setOriginalControlBlob] = useState<Blob | null>(null);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState(0);
@@ -205,9 +393,14 @@ export default function App() {
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const [isMobile, setIsMobile] = useState(false);
 
+  // Track latest sessions for unmount cleanup (SSE)
+  const currentSessionRef = useRef<GenerationSession | null>(null);
+  const heroSessionRef = useRef<GenerationSession | null>(null);
+  useEffect(() => { currentSessionRef.current = currentSession; }, [currentSession]);
+  useEffect(() => { heroSessionRef.current = heroSession; }, [heroSession]);
+
   /* ---------- Effects ---------- */
 
-  // Detect mobile device
   useEffect(() => {
     const checkMobile = () => {
       const isMobileDevice =
@@ -263,18 +456,90 @@ export default function App() {
     }
   }, [heroImage]);
 
+  // Close any open SSE connections when the app unmounts
+  useEffect(() => {
+    return () => {
+      try { currentSessionRef.current?.sse?.close(); } catch {}
+      try { heroSessionRef.current?.sse?.close(); } catch {}
+    };
+  }, []);
+
+
+  /* ---------- Responsive Canvas + DPR Scaling (square) ---------- */
+
+  const resizeCanvasToDisplaySize = useCallback((preserve = true) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Measure the current rendered (CSS) size; canvas is square via CSS aspect-ratio
+    const rect = canvas.getBoundingClientRect();
+    const cssSide = Math.max(1, Math.floor(rect.width));
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+    const target = Math.max(1, Math.floor(cssSide * dpr));
+
+    // 🔒 keep the backing store square, too
+    if (canvas.width === target && canvas.height === target) return;
+
+    // Optionally preserve current drawing
+    let prevUrl: string | null = null;
+    if (preserve) {
+      try { prevUrl = canvas.toDataURL('image/png'); } catch { prevUrl = null; }
+    }
+
+    // Resize backing store (square)
+    canvas.width = target;
+    canvas.height = target;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // White background (ink on white)
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    // Redraw previous content scaled to new size
+    if (prevUrl) {
+      const img = new Image();
+      img.onload = () => {
+        ctx.imageSmoothingEnabled = true;
+        // @ts-expect-error TS lib may not know this union type
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      };
+      img.src = prevUrl;
+    }
+
+    // Reset draw-state caches
+    setDrips([]);
+    setStrokeHistory([]);
+  }, []);
+
+  useEffect(() => {
+    if (!isDrawMode) return;
+    const id = window.requestAnimationFrame(() => resizeCanvasToDisplaySize(false));
+    const onResize = () => resizeCanvasToDisplaySize(true);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, [isDrawMode, resizeCanvasToDisplaySize]);
+
   /* ---------- Announcer ---------- */
 
   const announce = useCallback((message: string) => {
     if (!liveRegionRef.current) return;
     liveRegionRef.current.textContent = message;
-    // Clear after a bit so later messages can be read
     setTimeout(() => {
       if (liveRegionRef.current) liveRegionRef.current.textContent = '';
     }, 600);
   }, []);
 
-  /* ---------- SSE Helpers (shared for all project types) ---------- */
+  /* ---------- SSE Helpers (shared) ---------- */
 
   type SSEData =
     | { type: 'connected'; projectId?: string }
@@ -352,7 +617,6 @@ export default function App() {
       apply(prev => (prev ? { ...prev, generating: false, sse: null, error: 'Connection error' } : null));
     };
 
-    // Store a reference so we can close on new runs
     apply(prev => (prev ? { ...prev, sse: es } : null));
   }
 
@@ -384,7 +648,6 @@ export default function App() {
 
   const startGeneration = useCallback(
     async (basePrompt: string, style: string, refinement = '') => {
-      // Close any existing SSE connection for current session
       currentSession?.sse?.close();
 
       const sessionId = nextSessionId();
@@ -410,13 +673,11 @@ export default function App() {
           { prompt: basePrompt, style, refinement }
         );
 
-        // Pre-seed sticky compare from server context if provided
         if (context?.compareAgainstUrl) {
           setCurrentSession(prev => (prev ? { ...prev, compareAgainstUrl: context.compareAgainstUrl } : prev));
         }
 
         attachSSE(projectId, sessionId, basePrompt, setCurrentSession, () => {
-          // Add to history when done
           setCurrentSession(prev => {
             if (!prev) return prev;
             setSessionHistory(history => [prev, ...history.slice(0, 9)]);
@@ -432,7 +693,6 @@ export default function App() {
 
   const startGenerationWithControlnet = useCallback(
     async (basePrompt: string, style: string, controlImage: File, sketchDataUrl?: string) => {
-      // Close any existing SSE connection
       currentSession?.sse?.close();
 
       const sessionId = nextSessionId();
@@ -458,7 +718,6 @@ export default function App() {
         compareAgainstUrl: sketchDataUrl || originalSketch || undefined
       };
 
-      // Reflect "custom" UI intent
       setPrompt('custom');
       setSelectedStyle('Solid Black');
 
@@ -477,7 +736,6 @@ export default function App() {
           form
         );
 
-        // Pre-seed compare from server (project compare endpoint) if present
         if (context?.compareAgainstUrl) {
           setCurrentSession(prev => (prev ? { ...prev, compareAgainstUrl: context.compareAgainstUrl } : prev));
         }
@@ -505,7 +763,6 @@ export default function App() {
       useControlnet?: boolean,
       sourceImageUrl?: string
     ) => {
-      // Close any existing SSE connection for hero session
       heroSession?.sse?.close();
 
       const sessionId = nextSessionId();
@@ -519,11 +776,9 @@ export default function App() {
         progress: 0,
         error: null,
         seed,
-        // Give SPACE a target even before SSE arrives
         compareAgainstUrl: useControlnet ? sourceImageUrl || originalSketch || undefined : undefined
       };
 
-      // If refining a controlnet batch, inherit & extend history
       if (useControlnet && currentSession?.controlnetHistory && sourceImageUrl) {
         newHero.controlnetHistory = [
           ...currentSession.controlnetHistory,
@@ -538,24 +793,17 @@ export default function App() {
         let projectResp: { projectId: string; context?: any };
 
         if (useControlnet) {
-          // For phase 3+ (refinements), use the selected image as controlnet input
-          // For phase 2 (initial generation), use original drawing
           let controlBlob: Blob | null = null;
-          
           if (sourceImageUrl) {
-            // Phase 3+: Fetch and use the selected generated image as controlnet input
             try {
               const r = await fetch(sourceImageUrl);
               controlBlob = await r.blob();
-            } catch (err) {
-              // Fall back to original drawing if fetch fails
+            } catch {
               controlBlob = originalControlBlob;
             }
           } else {
-            // Phase 2: Use original drawing
             controlBlob = originalControlBlob;
           }
-          
           if (!controlBlob) throw new Error('No control image available for controlnet generation');
 
           const form = new FormData();
@@ -576,7 +824,6 @@ export default function App() {
 
         const { projectId, context } = projectResp;
 
-        // Pre-seed compare from server if present
         if (context?.compareAgainstUrl) {
           setHeroSession(prev => (prev ? { ...prev, compareAgainstUrl: context.compareAgainstUrl } : prev));
         }
@@ -687,7 +934,7 @@ export default function App() {
     setShowOriginalSketch(false);
   };
 
-  // Touch gesture (mobile)
+  // Touch gesture (mobile) for hero navigation
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
       if (!isMobile || !heroImage) return;
@@ -714,54 +961,76 @@ export default function App() {
         e.preventDefault();
       }
     },
-    [isMobile, heroImage, navigateHero]
+    [isMobile, heroImage]
   );
 
-  // Spacebar toggle functionality (reusable for click and keypress)
+  // Helper: should global key handler ignore this target?
+  const isInteractiveTarget = (el: EventTarget | null) => {
+    const node = el as HTMLElement | null;
+    if (!node) return false;
+    if (node.isContentEditable) return true;
+    const tag = node.tagName?.toLowerCase();
+    if (['input', 'textarea', 'select', 'button'].includes(tag)) return true;
+    if (node.getAttribute('role') === 'textbox') return true;
+    if (node.closest('input,textarea,select,button,[contenteditable="true"],[role="textbox"]')) return true;
+    return false;
+  };
+
+  // Spacebar toggle (uses state updaters; safe across renders)
   const handleSpacebarToggle = useCallback(() => {
     const activeSession = heroSession || currentSession;
     const historySession = activeSession === heroSession ? heroSession : currentSession;
     const history = historySession?.controlnetHistory || [];
     const compareUrl = historySession?.compareAgainstUrl || originalSketch || '';
-    
-    // Only proceed if we're in hero mode OR have comparison data available
-    if (heroImage || history.length > 0 || compareUrl) {
+
+    // Always allow spacebar toggle if there's comparison data available
+    if (history.length > 0 || compareUrl) {
       if (history.length > 0) {
         if (history.length === 1) {
-          // 2 levels deep: toggle between original sketch (index 0) and current design
           const totalStates = 2;
-          setCurrentHistoryIndex((currentIndex) => {
-            const actualCurrentIndex = currentHistoryIndex;
-            const newIndex = (actualCurrentIndex + 1) % totalStates;
-            const willShowSketch = newIndex < history.length;
-            setShowOriginalSketch(willShowSketch);
+          setCurrentHistoryIndex(prevIndex => {
+            const newIndex = (prevIndex + 1) % totalStates;
+            setShowOriginalSketch(newIndex < history.length);
             return newIndex;
           });
         } else {
-          // 3+ levels deep: only toggle between previous image (last iteration) and current design
-          const previousIndex = history.length - 1; // Last iteration (not original sketch)
-          setCurrentHistoryIndex((currentIndex) => {
-            const actualCurrentIndex = currentHistoryIndex;
-            if (actualCurrentIndex === history.length) {
-              // Currently showing current design, switch to previous iteration
+          const previousIndex = history.length - 1;
+          setCurrentHistoryIndex(prevIndex => {
+            if (prevIndex === history.length) {
               setShowOriginalSketch(true);
               return previousIndex;
             } else {
-              // Currently showing previous iteration, switch back to current design
               setShowOriginalSketch(false);
               return history.length;
             }
           });
         }
       } else if (compareUrl) {
-        // No explicit history, but we do have a sticky compare (server or local sketch)
-        setShowOriginalSketch(!showOriginalSketch);
+        setShowOriginalSketch(prev => !prev);
       }
     }
-  }, [heroSession, currentSession, heroImage, originalSketch, currentHistoryIndex, showOriginalSketch]);
+  }, [heroSession, currentSession, heroImage, originalSketch]);
 
-  // Keyboard shortcuts (kept on container for learnability)
+  // Document-level spacebar listener for toggle functionality
+  useEffect(() => {
+    const handleDocumentKeyDown = (e: KeyboardEvent) => {
+      // Skip if typing in interactive elements
+      if (isInteractiveTarget(e.target)) return;
+      
+      if (e.key === ' ') {
+        e.preventDefault();
+        handleSpacebarToggle();
+      }
+    };
+
+    document.addEventListener('keydown', handleDocumentKeyDown);
+    return () => document.removeEventListener('keydown', handleDocumentKeyDown);
+  }, [handleSpacebarToggle]);
+
+  // Global keyboard shortcuts (skip when typing)
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (isInteractiveTarget(e.target)) return;
+
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       handleGenerate();
     }
@@ -782,39 +1051,48 @@ export default function App() {
     }
   };
 
-  /* ---------- Drawing (unchanged visuals/feel) + Upload/Download ---------- */
+  /* ---------- Drawing with Pointer Events (persist across leave) ---------- */
 
-  const getEventPosition = (
-    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
-  ) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
+  // Track the active pointer ID so we can release capture on window-level fallback
+  const activePointerIdRef = useRef<number | null>(null);
+
+  // Convert client coords to canvas coords, return null if outside bounds
+  const getCanvasCoordsFromClient = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    let clientX: number, clientY: number;
-    if ('touches' in e) {
-      const touch = e.touches[0] || e.changedTouches[0];
-      clientX = touch.clientX;
-      clientY = touch.clientY;
-    } else {
-      clientX = e.clientX;
-      clientY = e.clientY;
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
+    
+    // Check if coordinates are within canvas bounds
+    if (x < 0 || x > canvas.width || y < 0 || y > canvas.height) {
+      return null; // Outside canvas bounds
     }
-    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+    
+    return { x, y };
   };
 
-  const startDrawing = (
-    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
-  ) => {
+  const startDrawingPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    setIsDrawing(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const { x, y } = getEventPosition(e);
+    // Capture this pointer so we continue to receive move/up even off-canvas
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    } catch {}
+    activePointerIdRef.current = e.pointerId;
+
+    setIsDrawing(true);
+    setIsOutsideCanvas(false);
+
+    const coords = getCanvasCoordsFromClient(e.clientX, e.clientY);
+    if (!coords) return; // Start point is outside canvas, don't start drawing
+
+    const { x, y } = coords;
 
     if (drawTool === 'brush') {
       ctx.beginPath();
@@ -830,18 +1108,50 @@ export default function App() {
     }
   };
 
-  const draw = (
-    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
-  ) => {
-    e.preventDefault();
+  const drawPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
+    // Only respond to the active pointer
+    if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return;
+
+    e.preventDefault();
 
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const { x, y } = getEventPosition(e);
+    const coords = getCanvasCoordsFromClient(e.clientX, e.clientY);
+    
+    // Handle cursor leaving canvas
+    if (!coords) {
+      if (!isOutsideCanvas) {
+        setIsOutsideCanvas(true);
+        // End current stroke for brush and calligraphy tools
+        if (drawTool === 'brush' || drawTool === 'calligraphy') {
+          ctx.beginPath(); // This will break the line when we re-enter
+        }
+      }
+      return;
+    }
+
+    const { x, y } = coords;
+
+    // Handle cursor re-entering canvas
+    if (isOutsideCanvas) {
+      setIsOutsideCanvas(false);
+      // Start a new stroke at the re-entry point
+      if (drawTool === 'brush') {
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        return; // Don't draw on re-entry, just position
+      } else if (drawTool === 'calligraphy') {
+        setLastPos({ x, y });
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        return; // Don't draw on re-entry, just position
+      }
+      // For square tool, continue normally as it doesn't have continuous strokes
+    }
 
     if (drawTool === 'brush') {
       ctx.lineWidth = brushSize;
@@ -868,11 +1178,10 @@ export default function App() {
       const normalizedSpeed = Math.min(speed / 20, 1);
       const currentWidth = maxWidth - normalizedSpeed * (maxWidth - minWidth);
 
-      // Draw a slanted quad to simulate a chisel tip
       const halfWidth = currentWidth / 2;
       const tiltOffset = halfWidth * 0.4;
 
-      const ctx2 = ctx; // alias
+      const ctx2 = ctx;
       ctx2.save();
       ctx2.fillStyle = drawColor;
       ctx2.beginPath();
@@ -903,12 +1212,44 @@ export default function App() {
     }
   };
 
-  const stopDrawing = () => {
+  const endDrawingPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    // Release capture if we had it
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+    } catch {}
+    activePointerIdRef.current = null;
+    // Reset state
     setIsDrawing(false);
     setStartPos(null);
     setBaseImageData(null);
     setLastPos(null);
+    setIsOutsideCanvas(false);
   };
+
+  // Window-level fallback: if pointerup/cancel happens off the element and capture wasn't honored
+  useEffect(() => {
+    if (!isDrawing) return;
+    const handleUp = () => {
+      const canvas = canvasRef.current as any;
+      const id = activePointerIdRef.current;
+      if (canvas && typeof canvas.releasePointerCapture === 'function' && id != null) {
+        try { canvas.releasePointerCapture(id); } catch {}
+      }
+      activePointerIdRef.current = null;
+      setIsDrawing(false);
+      setStartPos(null);
+      setBaseImageData(null);
+      setLastPos(null);
+      setIsOutsideCanvas(false);
+    };
+    window.addEventListener('pointerup', handleUp, { passive: true });
+    window.addEventListener('pointercancel', handleUp, { passive: true });
+    return () => {
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
+  }, [isDrawing]);
 
   const clearCanvas = () => {
     const canvas = canvasRef.current;
@@ -925,15 +1266,16 @@ export default function App() {
     setIsDrawMode(prev => {
       const next = !prev;
       if (next) {
-        // Initialize canvas when entering draw mode
+        // Initialize canvas sizing + white background when entering draw mode
         setTimeout(() => {
+          resizeCanvasToDisplaySize(false);
           const canvas = canvasRef.current;
           const ctx = canvas?.getContext('2d');
           if (canvas && ctx) {
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
           }
-        }, 100);
+        }, 50);
       }
       return next;
     });
@@ -954,9 +1296,8 @@ export default function App() {
     }, 'image/png');
   };
 
-  // ---------- NEW: Draw Mode — Upload/Download helpers ----------
+  // ---------- Draw Mode — Upload/Download helpers ----------
 
-  /** Contain-fit an image into the canvas while preserving aspect ratio */
   const drawImageContain = (img: HTMLImageElement) => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -982,12 +1323,10 @@ export default function App() {
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, dx, dy, dw, dh);
 
-    // Reset stroke/paint state
     setDrips([]);
     setStrokeHistory([]);
   };
 
-  /** Load a File (image/*) into the canvas */
   const loadFileIntoCanvas = (file: File) => {
     if (!file || !file.type.startsWith('image/')) {
       announce('Unsupported file type — please use an image');
@@ -1007,18 +1346,14 @@ export default function App() {
     img.src = objectUrl;
   };
 
-  /** Hidden input → click to open */
   const openFilePicker = () => fileInputRef.current?.click();
 
-  /** Input change handler */
   const handleFileSelected: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const file = e.target.files?.[0];
     if (file) loadFileIntoCanvas(file);
-    // Reset input value so selecting the same file again triggers change
     e.currentTarget.value = '';
   };
 
-  /** Drag & drop handlers */
   const handleCanvasDragOver: React.DragEventHandler<HTMLCanvasElement> = (e) => {
     e.preventDefault();
     setIsDraggingOver(true);
@@ -1034,7 +1369,6 @@ export default function App() {
     if (file) loadFileIntoCanvas(file);
   };
 
-  /** Paste-from-clipboard support (e.g., from screenshots) */
   const handlePaste: React.ClipboardEventHandler<HTMLDivElement> = (e) => {
     const items = e.clipboardData?.items || [];
     for (let i = 0; i < items.length; i++) {
@@ -1050,7 +1384,6 @@ export default function App() {
     }
   };
 
-  /** Download current canvas as PNG */
   const handleDownloadDrawing = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1069,7 +1402,6 @@ export default function App() {
     }, 'image/png');
   };
 
-  /** Draw-mode keyboard shortcuts: ⌘/Ctrl+O (open), ⌘/Ctrl+S (save) */
   const handleDrawKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
     const key = e.key.toLowerCase();
     if ((e.metaKey || e.ctrlKey) && key === 'o') {
@@ -1086,6 +1418,9 @@ export default function App() {
 
   return (
     <div className="app" onKeyDown={handleKeyDown}>
+      {/* Inject mobile tokens + layout */}
+      <MobileStyles />
+
       {/* Live region for screen reader announcements */}
       <div aria-live="polite" aria-atomic="true" className="sr-only" ref={liveRegionRef} />
 
@@ -1172,8 +1507,25 @@ export default function App() {
             →
           </button>
 
-          {/* Image counter + spacebar helper */}
-          <div className="hero-counter" onClick={handleSpacebarToggle} style={{ cursor: 'pointer' }}>
+          {/* Image counter + spacebar helper (keyboard-accessible) */}
+          <div
+            className="hero-counter"
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSpacebarToggle();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation(); // avoid double-toggle with global handler
+                handleSpacebarToggle();
+              }
+            }}
+            style={{ cursor: 'pointer' }}
+            aria-label="Toggle compare (Space or Enter)"
+          >
             {heroIndex + 1} / {(heroSession || currentSession)?.images.length || 0}
             {isMobile && (
               <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem' }}>Swipe to navigate</div>
@@ -1283,7 +1635,13 @@ export default function App() {
                         <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>Content Filtered</div>
                       </div>
                     ) : (
-                      <img src={image.url} alt={`Variation ${index + 1}`} className="orbit-img" />
+                      <img
+                        src={image.url}
+                        alt={`Variation ${index + 1}`}
+                        className="orbit-img"
+                        loading="lazy"
+                        decoding="async"
+                      />
                     )}
                   </div>
                 );
@@ -1301,152 +1659,161 @@ export default function App() {
             onKeyDown={handleDrawKeyDown}
             onPaste={handlePaste}
           >
-            <div className="draw-controls">
-              <input
-                type="text"
-                value={visionPrompt}
-                onChange={(e) => setVisionPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && visionPrompt.trim()) {
-                    handleCreate();
-                  }
-                }}
-                placeholder="describe your vision"
-                className="vision-input"
-              />
-
-              <div className="draw-tools">
-                <div className="tools-row">
-                  <div className="tool-buttons">
-                    <button
-                      className={`tool-btn ${drawTool === 'brush' ? 'active' : ''}`}
-                      onClick={() => setDrawTool('brush')}
-                      title="Brush"
-                    >
-                      🖌️
-                    </button>
-                    <button
-                      className={`tool-btn ${drawTool === 'calligraphy' ? 'active' : ''}`}
-                      onClick={() => setDrawTool('calligraphy')}
-                      title="Calligraphy Pen (with drips)"
-                    >
-                      🖋️
-                    </button>
-                    <button
-                      className={`tool-btn ${drawTool === 'square' ? 'active' : ''}`}
-                      onClick={() => setDrawTool('square')}
-                      title="Square"
-                    >
-                      ⬛
-                    </button>
-                  </div>
-
-                  <div className="color-buttons">
-                    <button
-                      className={`color-btn black ${drawColor === '#000000' ? 'active' : ''}`}
-                      onClick={() => setDrawColor('#000000')}
-                      title="Black"
-                    >
-                      ⚫
-                    </button>
-                    <button
-                      className={`color-btn white ${drawColor === '#ffffff' ? 'active' : ''}`}
-                      onClick={() => setDrawColor('#ffffff')}
-                      title="White"
-                    >
-                      ⚪
-                    </button>
-                  </div>
-
-                  <div className="size-control">
-                    <label>Size:</label>
-                    <input
-                      type="range"
-                      min="2"
-                      max="40"
-                      value={brushSize}
-                      onChange={(e) => setBrushSize(Number(e.target.value))}
-                      className="size-slider"
-                    />
-                    <span>{brushSize}px</span>
-                  </div>
-
-                  {/* NEW: Upload / Download buttons (match existing tool button aesthetics) */}
-                  <div className="io-buttons" style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      className="tool-btn"
-                      onClick={openFilePicker}
-                      title="Upload image (⌘/Ctrl+O)"
-                    >
-                      ⬆️
-                    </button>
-                    <button
-                      className="tool-btn"
-                      onClick={handleDownloadDrawing}
-                      title="Download PNG (⌘/Ctrl+S)"
-                    >
-                      ⬇️
-                    </button>
-                  </div>
-
-                  <button onClick={clearCanvas} className="clear-btn" title="Clear canvas">
-                    🗑️
-                  </button>
-                </div>
-              </div>
-
-              <button onClick={handleCreate} disabled={!visionPrompt.trim()} className="create-btn">
-                Create
+            {/* App-style header */}
+            <div className="mobile-header">
+              <button
+                className="icon-btn"
+                onClick={() => setIsDrawMode(false)}
+                aria-label="Close draw mode"
+                title="Close"
+              >
+                ‹
               </button>
+              <div className="mobile-title">Draw</div>
+              <div style={{ inlineSize: 40 }} />
             </div>
 
-            {/* Hidden input for file picker */}
+            {/* Prompt input */}
             <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleFileSelected}
-              style={{ display: 'none' }}
+              type="text"
+              value={visionPrompt}
+              onChange={(e) => setVisionPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && visionPrompt.trim()) {
+                  handleCreate();
+                }
+              }}
+              placeholder="Describe your vision…"
+              className="vision-input"
             />
 
-            {/* Canvas with DnD & subtle overlay */}
-            <div className="drawing-canvas-wrapper" style={{ position: 'relative' }}>
-              <canvas
-                ref={canvasRef}
-                width={1024}
-                height={1024}
-                className="drawing-canvas"
-                onMouseDown={startDrawing}
-                onMouseMove={draw}
-                onMouseUp={stopDrawing}
-                onMouseLeave={stopDrawing}
-                onTouchStart={startDrawing}
-                onTouchMove={draw}
-                onTouchEnd={stopDrawing}
-                onDragOver={handleCanvasDragOver}
-                onDragLeave={handleCanvasDragLeave}
-                onDrop={handleCanvasDrop}
-              />
-              {isDraggingOver && (
-                <div
-                  className="drop-overlay"
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '12px',
-                    border: '2px dashed #ff6b35',
-                    background: 'rgba(255,107,53,0.1)',
-                    fontWeight: 600,
-                    letterSpacing: 0.3,
-                    pointerEvents: 'none'
-                  }}
-                >
-                  Drop image to load
+            {/* Tools row */}
+            <div className="draw-controls">
+              <div className="tools-row">
+                <div className="tool-buttons">
+                  <button
+                    className={`tool-btn ${drawTool === 'brush' ? 'active' : ''}`}
+                    onClick={() => setDrawTool('brush')}
+                    title="Brush"
+                  >
+                    🖌️
+                  </button>
+                  <button
+                    className={`tool-btn ${drawTool === 'calligraphy' ? 'active' : ''}`}
+                    onClick={() => setDrawTool('calligraphy')}
+                    title="Calligraphy Pen (with drips)"
+                  >
+                    🖋️
+                  </button>
+                  <button
+                    className={`tool-btn ${drawTool === 'square' ? 'active' : ''}`}
+                    onClick={() => setDrawTool('square')}
+                    title="Square"
+                  >
+                    ⬛
+                  </button>
                 </div>
-              )}
+
+                <div className="color-buttons">
+                  <button
+                    className={`color-btn black ${drawColor === '#000000' ? 'active' : ''}`}
+                    onClick={() => setDrawColor('#000000')}
+                    title="Black"
+                  >
+                    ⚫
+                  </button>
+                  <button
+                    className={`color-btn white ${drawColor === '#ffffff' ? 'active' : ''}`}
+                    onClick={() => setDrawColor('#ffffff')}
+                    title="White"
+                  >
+                    ⚪
+                  </button>
+                </div>
+
+                <div className="size-control">
+                  <label>Size:</label>
+                  <input
+                    type="range"
+                    min="2"
+                    max="40"
+                    value={brushSize}
+                    onChange={(e) => setBrushSize(Number(e.target.value))}
+                    className="size-slider"
+                  />
+                  <span>{brushSize}px</span>
+                </div>
+
+                <div className="io-buttons">
+                  <button
+                    className="tool-btn"
+                    onClick={openFilePicker}
+                    title="Upload image (⌘/Ctrl+O)"
+                  >
+                    ⬆️
+                  </button>
+                  <button
+                    className="tool-btn"
+                    onClick={handleDownloadDrawing}
+                    title="Download PNG (⌘/Ctrl+S)"
+                  >
+                    ⬇️
+                  </button>
+                </div>
+
+                <button onClick={clearCanvas} className="clear-btn" title="Clear canvas">
+                  🗑️
+                </button>
+              </div>
+            </div>
+
+            {/* Canvas card */}
+            <div className="mobile-card">
+              {/* Hidden input for file picker */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileSelected}
+                style={{ display: 'none' }}
+              />
+
+              {/* Canvas with DnD & subtle overlay */}
+              <div className="drawing-canvas-wrapper">
+                <canvas
+                  ref={canvasRef}
+                  className="drawing-canvas"
+                  // 🔽 Pointer Events: keep writing off-canvas until pointerup anywhere
+                  onPointerDown={startDrawingPointer}
+                  onPointerMove={drawPointer}
+                  onPointerUp={endDrawingPointer}
+                  onPointerCancel={endDrawingPointer}
+                  onDragOver={handleCanvasDragOver}
+                  onDragLeave={handleCanvasDragLeave}
+                  onDrop={handleCanvasDrop}
+                  aria-label="Drawing canvas"
+                />
+                {isDraggingOver && (
+                  <div
+                    className="drop-overlay"
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '12px',
+                      border: '2px dashed #ff6b35',
+                      background: 'rgba(255,107,53,0.1)',
+                      fontWeight: 600,
+                      letterSpacing: 0.3,
+                      pointerEvents: 'none'
+                    }}
+                  >
+                    Drop image to load
+                  </div>
+                )}
+              </div>
             </div>
 
             <div
@@ -1459,6 +1826,10 @@ export default function App() {
             >
               Tip: ⌘/Ctrl+O to upload, ⌘/Ctrl+S to download — you can also paste an image here.
             </div>
+
+            <button onClick={handleCreate} disabled={!visionPrompt.trim()} className="create-btn">
+              Create
+            </button>
 
             <button className="draw-close" onClick={() => setIsDrawMode(false)} aria-label="Close draw mode">
               ×
@@ -1607,6 +1978,8 @@ export default function App() {
                               alt={`Tattoo concept ${index + 1}`}
                               className="circle-img"
                               data-image-index={index}
+                              loading="lazy"
+                              decoding="async"
                             />
                           )}
                         </div>
