@@ -210,6 +210,124 @@ const MobileStyles = () => (
     /* Non-hero list images polish (keeps perf) */
     .circle-img, .orbit-img { border-radius: 12px; background: #fff; }
 
+    /* Edit Modal Styles */
+    .edit-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-4);
+    }
+    .edit-modal {
+      background: var(--bg-app);
+      border-radius: var(--radius-3);
+      border: var(--border-soft-dark);
+      box-shadow: var(--shadow-2);
+      width: 100%;
+      max-width: 480px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .edit-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-5) var(--space-5) var(--space-3);
+      border-bottom: var(--border-soft-dark);
+    }
+    .edit-modal-header h3 {
+      margin: 0;
+      color: #f3f5f9;
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .edit-modal-close {
+      background: none;
+      border: none;
+      color: #f3f5f9;
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+    }
+    .edit-modal-close:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .edit-modal-content {
+      padding: var(--space-4) var(--space-5);
+    }
+    .edit-field {
+      margin-bottom: var(--space-4);
+    }
+    .edit-field label {
+      display: block;
+      color: #f3f5f9;
+      font-weight: 600;
+      margin-bottom: var(--space-2);
+      font-size: 0.9rem;
+    }
+    .edit-prompt-input, .edit-style-input, .edit-controlnet-select {
+      width: 100%;
+      padding: var(--space-3);
+      border-radius: 8px;
+      border: var(--border-soft-dark);
+      background: rgba(255, 255, 255, 0.05);
+      color: #f3f5f9;
+      font-size: 0.9rem;
+      resize: vertical;
+    }
+    .edit-prompt-input:focus, .edit-style-input:focus, .edit-controlnet-select:focus {
+      outline: none;
+      border-color: var(--brand);
+      box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.2);
+    }
+    .edit-modal-actions {
+      display: flex;
+      gap: var(--space-3);
+      padding: var(--space-4) var(--space-5) var(--space-5);
+      border-top: var(--border-soft-dark);
+    }
+    .edit-cancel-btn, .edit-generate-btn {
+      flex: 1;
+      padding: var(--space-3) var(--space-4);
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .edit-cancel-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: var(--border-soft-dark);
+      color: #f3f5f9;
+    }
+    .edit-cancel-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+    .edit-generate-btn {
+      background: var(--brand);
+      border: none;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+    }
+    .edit-generate-btn:hover:not(:disabled) {
+      background: #e55a2b;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(255, 107, 53, 0.4);
+    }
+    .edit-generate-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
     @media (min-width: 768px) {
       .draw-center { max-width: 680px; }
       .draw-close { display: inline-grid; place-items: center; }
@@ -374,6 +492,12 @@ export default function App() {
   const [originalControlBlob, setOriginalControlBlob] = useState<Blob | null>(null);
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState(0);
   const [showOriginalSketch, setShowOriginalSketch] = useState(false);
+
+  // Edit modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editPrompt, setEditPrompt] = useState('');
+  const [editStyle, setEditStyle] = useState('');
+  const [editControlnetType, setEditControlnetType] = useState('');
 
   // NEW: Draw Mode I/O
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -884,6 +1008,19 @@ export default function App() {
     const useControlnet = currentSession.isControlnet;
     const sourceImageUrl = useControlnet ? heroImage.url : undefined;
     startHeroGeneration(heroImage.prompt, selectedStyle, option.value, seed, useControlnet, sourceImageUrl);
+  };
+
+  const openEditModal = () => {
+    if (!heroImage) return;
+    
+    // Use heroSession data if available (for edited generations), otherwise use currentSession
+    const activeSession = heroSession || currentSession;
+    if (!activeSession) return;
+    
+    setEditPrompt(heroSession ? heroSession.basePrompt : heroImage.prompt);
+    setEditStyle(activeSession.style);
+    setEditControlnetType(controlnetType);
+    setShowEditModal(true);
   };
 
   const handleImageClick = (image: TattooImage) => {
@@ -1472,7 +1609,12 @@ export default function App() {
             {/* Original hero prompt display with close button */}
             {!heroSession && (
               <div className="hero-prompt-container">
-                <div className="hero-prompt-text">
+                <div 
+                  className="hero-prompt-text"
+                  onClick={openEditModal}
+                  style={{ cursor: 'pointer' }}
+                  title="Click to edit prompt, style, and ControlNet"
+                >
                   <strong>{heroImage.prompt}</strong>
                   <br />
                   <span style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', opacity: 0.8 }}>
@@ -1486,6 +1628,10 @@ export default function App() {
                       </span>
                     </>
                   )}
+                  <br />
+                  <span style={{ color: '#ff6b35', fontSize: '0.6rem', opacity: 0.8, marginTop: '4px', display: 'block' }}>
+                    Click to edit
+                  </span>
                 </div>
                 <button className="hero-prompt-close" onClick={closeHeroMode} aria-label="Close hero view">
                   ×
@@ -1493,19 +1639,36 @@ export default function App() {
               </div>
             )}
 
-            {/* Exit refinement mode button */}
+            {/* Hero session info display (for edited generations) */}
             {heroSession && !heroSession.generating && (
-              <div className="refinement-exit-container">
-                <div className="refinement-combined-container">
-                  <div className="refinement-combined-text">
-                    <strong>
-                      Add {heroSession.refinement.includes('Color') ? 'More Color' : heroSession.refinement.replace('More ', '')}
-                    </strong>
-                  </div>
-                  <button className="refinement-close-btn" onClick={exitRefinementMode} aria-label="Return to original hero">
-                    ×
-                  </button>
+              <div className="hero-prompt-container">
+                <div 
+                  className="hero-prompt-text"
+                  onClick={openEditModal}
+                  style={{ cursor: 'pointer' }}
+                  title="Click to edit prompt, style, and ControlNet"
+                >
+                  <strong>{heroSession.basePrompt}</strong>
+                  <br />
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', opacity: 0.8 }}>
+                    Style: {heroSession.style}
+                  </span>
+                  {currentSession?.isControlnet && (
+                    <>
+                      <br />
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', opacity: 0.8 }}>
+                        ControlNet: {controlnetType}
+                      </span>
+                    </>
+                  )}
+                  <br />
+                  <span style={{ color: '#ff6b35', fontSize: '0.6rem', opacity: 0.8, marginTop: '4px', display: 'block' }}>
+                    Click to edit
+                  </span>
                 </div>
+                <button className="hero-prompt-close" onClick={closeHeroMode} aria-label="Close hero view">
+                  ×
+                </button>
               </div>
             )}
           </div>
@@ -1777,19 +1940,13 @@ export default function App() {
                   >
                     <option value="scribble">scribble</option>
                     <option value="canny">canny</option>
-                    <option value="depth">depth</option>
                     <option value="inpaint">inpaint</option>
                     <option value="instrp2p">instrp2p</option>
                     <option value="lineart">lineart</option>
                     <option value="lineartanime">lineartanime</option>
-                    <option value="mlsd">mlsd</option>
-                    <option value="normalbae">normalbae</option>
-                    <option value="openpose">openpose</option>
-                    <option value="segmentation">segmentation</option>
                     <option value="shuffle">shuffle</option>
                     <option value="softedge">softedge</option>
                     <option value="tile">tile</option>
-                    <option value="instantid">instantid</option>
                   </select>
                 </div>
 
@@ -2039,6 +2196,86 @@ export default function App() {
               })()}
             </>
           )}
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="edit-modal-overlay" onClick={() => setShowEditModal(false)}>
+          <div className="edit-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="edit-modal-header">
+              <h3>Edit Generation Parameters</h3>
+              <button onClick={() => setShowEditModal(false)} className="edit-modal-close">×</button>
+            </div>
+            
+            <div className="edit-modal-content">
+              <div className="edit-field">
+                <label>Prompt:</label>
+                <textarea
+                  value={editPrompt}
+                  onChange={(e) => setEditPrompt(e.target.value)}
+                  className="edit-prompt-input"
+                  rows={3}
+                  placeholder="Describe your tattoo idea..."
+                />
+              </div>
+
+              <div className="edit-field">
+                <label>Style:</label>
+                <input
+                  type="text"
+                  value={editStyle}
+                  onChange={(e) => setEditStyle(e.target.value)}
+                  className="edit-style-input"
+                  placeholder="e.g. Japanese Irezumi, Neo-Traditional, etc."
+                />
+              </div>
+
+              {currentSession?.isControlnet && (
+                <div className="edit-field">
+                  <label>ControlNet Type:</label>
+                  <select
+                    value={editControlnetType}
+                    onChange={(e) => setEditControlnetType(e.target.value)}
+                    className="edit-controlnet-select"
+                  >
+                    <option value="scribble">scribble</option>
+                    <option value="canny">canny</option>
+                    <option value="inpaint">inpaint</option>
+                    <option value="instrp2p">instrp2p</option>
+                    <option value="lineart">lineart</option>
+                    <option value="lineartanime">lineartanime</option>
+                    <option value="shuffle">shuffle</option>
+                    <option value="softedge">softedge</option>
+                    <option value="tile">tile</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="edit-modal-actions">
+              <button onClick={() => setShowEditModal(false)} className="edit-cancel-btn">
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  if (editPrompt.trim()) {
+                    setControlnetType(editControlnetType);
+                    if (currentSession?.isControlnet) {
+                      startHeroGeneration(editPrompt.trim(), editStyle, '', undefined, true, heroImage?.url);
+                    } else {
+                      startHeroGeneration(editPrompt.trim(), editStyle, '');
+                    }
+                    setShowEditModal(false);
+                  }
+                }}
+                disabled={!editPrompt.trim()}
+                className="edit-generate-btn"
+              >
+                Generate 16 Variations
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
