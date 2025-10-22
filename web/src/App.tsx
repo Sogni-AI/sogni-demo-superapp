@@ -364,6 +364,7 @@ export default function App() {
   const [brushSize, setBrushSize] = useState(8);
   const [drawColor, setDrawColor] = useState('#000000');
   const [drawTool, setDrawTool] = useState<'brush' | 'square' | 'calligraphy'>('brush');
+  const [controlnetType, setControlnetType] = useState('scribble');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
@@ -718,7 +719,7 @@ export default function App() {
         compareAgainstUrl: sketchDataUrl || originalSketch || undefined
       };
 
-      setPrompt('custom');
+      setPrompt(basePrompt);
       setSelectedStyle('Solid Black');
 
       setCurrentSession(newSession);
@@ -730,6 +731,7 @@ export default function App() {
         form.append('prompt', basePrompt);
         form.append('style', style);
         form.append('controlImage', controlImage);
+        form.append('controlnetType', controlnetType);
 
         const { projectId, context } = await postForm<{ projectId: string; context?: any }>(
           `${API_BASE}/api/generate-controlnet`,
@@ -751,7 +753,7 @@ export default function App() {
         setCurrentSession(prev => (prev ? { ...prev, generating: false, error: err?.message || 'Failed to start generation' } : null));
       }
     },
-    [announce, currentSession?.sse, nextSessionId, originalSketch]
+    [announce, currentSession?.sse, nextSessionId, originalSketch, controlnetType]
   );
 
   const startHeroGeneration = useCallback(
@@ -811,6 +813,7 @@ export default function App() {
           form.append('style', style);
           form.append('refinement', refinement);
           form.append('controlImage', controlBlob);
+          form.append('controlnetType', controlnetType);
 
           projectResp = await postForm(`${API_BASE}/api/generate-controlnet`, form);
         } else {
@@ -833,7 +836,7 @@ export default function App() {
         setHeroSession(prev => (prev ? { ...prev, generating: false, error: err?.message || 'Failed to start generation' } : null));
       }
     },
-    [announce, currentSession, heroSession?.sse, nextSessionId, originalControlBlob, originalSketch]
+    [announce, currentSession, heroSession?.sse, nextSessionId, originalControlBlob, originalSketch, controlnetType]
   );
 
   /* ---------- UI event helpers ---------- */
@@ -1475,6 +1478,14 @@ export default function App() {
                   <span style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', opacity: 0.8 }}>
                     Style: {currentSession?.style || selectedStyle}
                   </span>
+                  {currentSession?.isControlnet && (
+                    <>
+                      <br />
+                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', opacity: 0.8 }}>
+                        ControlNet: {controlnetType}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <button className="hero-prompt-close" onClick={closeHeroMode} aria-label="Close hero view">
                   ×
@@ -1742,6 +1753,44 @@ export default function App() {
                     className="size-slider"
                   />
                   <span>{brushSize}px</span>
+                </div>
+
+                <div className="controlnet-control">
+                  <label>
+                    ControlNet:
+                    <a
+                      href="https://stable-diffusion-art.com/controlnet/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="controlnet-help"
+                      title="Understanding controlnets"
+                      style={{ marginLeft: '4px', textDecoration: 'none', color: '#fff', opacity: 0.7 }}
+                    >
+                      (?)
+                    </a>
+                  </label>
+                  <select
+                    value={controlnetType}
+                    onChange={(e) => setControlnetType(e.target.value)}
+                    className="controlnet-dropdown"
+                    title="Select ControlNet type for guidance"
+                  >
+                    <option value="scribble">scribble</option>
+                    <option value="canny">canny</option>
+                    <option value="depth">depth</option>
+                    <option value="inpaint">inpaint</option>
+                    <option value="instrp2p">instrp2p</option>
+                    <option value="lineart">lineart</option>
+                    <option value="lineartanime">lineartanime</option>
+                    <option value="mlsd">mlsd</option>
+                    <option value="normalbae">normalbae</option>
+                    <option value="openpose">openpose</option>
+                    <option value="segmentation">segmentation</option>
+                    <option value="shuffle">shuffle</option>
+                    <option value="softedge">softedge</option>
+                    <option value="tile">tile</option>
+                    <option value="instantid">instantid</option>
+                  </select>
                 </div>
 
                 <div className="io-buttons">

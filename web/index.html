@@ -1771,6 +1771,47 @@
         gap: 0.5rem;
       }
 
+      .controlnet-control {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.25rem;
+      }
+
+      .controlnet-dropdown {
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg-secondary);
+        color: var(--text);
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .controlnet-dropdown:hover {
+        border-color: var(--accent);
+        background: var(--bg-primary);
+      }
+
+      .controlnet-dropdown:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.2);
+      }
+
+      .controlnet-link {
+        color: var(--accent);
+        font-size: 0.65rem;
+        text-decoration: none;
+        transition: all 0.3s ease;
+      }
+
+      .controlnet-link:hover {
+        color: var(--accent-hover);
+        text-decoration: underline;
+      }
+
       .tool-btn, .color-btn {
         padding: 0.4rem 0.6rem;
         border: 2px solid var(--border);
@@ -1984,6 +2025,19 @@
           flex-direction: column;
           gap: 0.25rem;
           text-align: center;
+        }
+
+        .controlnet-control {
+          text-align: center;
+        }
+
+        .controlnet-dropdown {
+          font-size: 0.7rem;
+          padding: 0.2rem 0.4rem;
+        }
+
+        .controlnet-link {
+          font-size: 0.6rem;
         }
 
         .drawing-canvas {

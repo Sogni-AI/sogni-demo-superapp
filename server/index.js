@@ -795,7 +795,8 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
       prompt = '',
       // style is allowed, but we won't force a theme that could fight the requested "ink tattoo concept"
       style = '',
-      refinement = ''
+      refinement = '',
+      controlnetType = 'scribble'  // Default to scribble for backward compatibility
     } = req.body || {};
 
     const baseText = String(title || prompt || '').trim();
@@ -845,7 +846,7 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
       positivePrompt: finalPrompt,        // Enhanced prompt for bold ink tattoos
       disableNSFWFilter: false,
       controlNet: {
-        name: 'scribble',                 // "draw mode" / sketch guidance
+        name: controlnetType,             // Use selected ControlNet type
         image: controlImageBuffer,
         strength: 0.7,                    // Reduced from 1.0 for better prompt influence
         mode: 'balanced',                 // Changed from 'cn_priority' to 'balanced'
