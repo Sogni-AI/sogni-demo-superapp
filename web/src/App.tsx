@@ -622,7 +622,7 @@ export default function App() {
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
   const [brushSize, setBrushSize] = useState(8);
   const [drawColor, setDrawColor] = useState('#000000');
-  const [drawTool, setDrawTool] = useState<'brush' | 'square' | 'calligraphy' | 'eraser'>('brush');
+  const [drawTool, setDrawTool] = useState<'brush' | 'square' | 'circle' | 'calligraphy' | 'eraser'>('brush');
   const [smoothBrush, setSmoothBrush] = useState(false);
   const [symmetryH, setSymmetryH] = useState(false);
   const [symmetryV, setSymmetryV] = useState(false);
@@ -1640,7 +1640,7 @@ export default function App() {
         ctx.fill();
         ctx.restore();
       }
-    } else if (drawTool === 'square') {
+    } else if (drawTool === 'square' || drawTool === 'circle') {
       setStartPos({ x, y });
       setBaseImageData(ctx.getImageData(0, 0, canvas.width, canvas.height));
     } else if (drawTool === 'calligraphy') {
@@ -1741,6 +1741,44 @@ export default function App() {
       }
     };
 
+    const processCircle = (clientX: number, clientY: number) => {
+      const coords = getCanvasCoordsFromClient(clientX, clientY);
+      if (!coords) return;
+      if (!(drawTool === 'circle' && startPos && baseImageData)) return;
+      ctx.putImageData(baseImageData, 0, 0);
+      ctx.fillStyle = drawColor;
+      // Calculate radius from starting point to current point
+      const dx = coords.x - startPos.x;
+      const dy = coords.y - startPos.y;
+      const radius = Math.sqrt(dx * dx + dy * dy);
+      // Draw circle
+      ctx.beginPath();
+      ctx.arc(startPos.x, startPos.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      if (symmetryH || symmetryV) {
+        const w = canvas.width;
+        const h = canvas.height;
+        // Vertical symmetry (V): left ↔ right mirror => reflect X
+        if (symmetryV) {
+          ctx.beginPath();
+          ctx.arc(w - startPos.x, startPos.y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Horizontal symmetry (H): top ↔ bottom mirror => reflect Y
+        if (symmetryH) {
+          ctx.beginPath();
+          ctx.arc(startPos.x, h - startPos.y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Both
+        if (symmetryH && symmetryV) {
+          ctx.beginPath();
+          ctx.arc(w - startPos.x, h - startPos.y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    };
+
     const processCalligraphy = (clientX: number, clientY: number) => {
       const coords = getCanvasCoordsFromClient(clientX, clientY);
       if (!coords || !lastPos) return;
@@ -1824,6 +1862,13 @@ export default function App() {
       return;
     }
 
+    if (drawTool === 'circle') {
+      // Only the last event is needed visually
+      const last = events[events.length - 1];
+      processCircle(last.clientX, last.clientY);
+      return;
+    }
+
     if (drawTool === 'calligraphy') {
       for (const ev of events) {
         processCalligraphy(ev.clientX, ev.clientY);
@@ -1885,6 +1930,22 @@ export default function App() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     setDrips([]);
     setStrokeHistory([]);
+  };
+
+  const invertCanvas = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    pushUndoSnapshot();
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = 255 - data[i];       // Red
+      data[i + 1] = 255 - data[i + 1]; // Green
+      data[i + 2] = 255 - data[i + 2]; // Blue
+      // Alpha channel (i + 3) is not inverted
+    }
+    ctx.putImageData(imageData, 0, 0);
   };
 
   const handleDrawModeToggle = () => {
@@ -2480,6 +2541,7 @@ export default function App() {
                 <div className="tb-right">
                   <button className="tool-btn" onClick={undo} title="Undo (⌘/Ctrl+Z)">↶</button>
                   <button className="tool-btn" onClick={redo} title="Redo (⌘/Ctrl+Shift+Z)">↷</button>
+                  <button className="tool-btn" onClick={invertCanvas} title="Invert colors">🔄</button>
                   <div className="rail-divider" style={{ width: 1, height: 28, margin: '0 8px' }} />
                   <button className="tool-btn" onClick={openFilePicker} title="Upload image (⌘/Ctrl+O)">⬆️</button>
                   <button className="tool-btn" onClick={handleDownloadDrawing} title="Download PNG (⌘/Ctrl+S)">⬇️</button>
@@ -2514,6 +2576,12 @@ export default function App() {
                   onClick={() => setDrawTool('square')}
                   title="Rectangle (R)"
                 >⬛</button>
+                <button
+                  className={`tool-btn ${drawTool === 'circle' ? 'active' : ''}`}
+                  aria-pressed={drawTool === 'circle'}
+                  onClick={() => setDrawTool('circle')}
+                  title="Circle (C)"
+                >⭕</button>
                 <button
                   className={`tool-btn ${drawTool === 'eraser' ? 'active' : ''}`}
                   aria-pressed={drawTool === 'eraser'}
@@ -2689,6 +2757,7 @@ export default function App() {
                   <div className="row">
                     <button className="tool-btn" onClick={openFilePicker} title="Upload image (⌘/Ctrl+O)">⬆️</button>
                     <button className="tool-btn" onClick={handleDownloadDrawing} title="Download PNG (⌘/Ctrl+S)">⬇️</button>
+                    <button className="tool-btn" onClick={invertCanvas} title="Invert colors">🔄</button>
                     <button onClick={clearCanvas} className="clear-btn" title="Clear canvas">🗑️</button>
                   </div>
                 </section>
@@ -2791,6 +2860,14 @@ export default function App() {
                     title="Rectangle (R)"
                   >
                     ⬛
+                  </button>
+                  <button
+                    className={`tool-btn ${drawTool === 'circle' ? 'active' : ''}`}
+                    aria-pressed={drawTool === 'circle'}
+                    onClick={() => setDrawTool('circle')}
+                    title="Circle (C)"
+                  >
+                    ⭕
                   </button>
                   <button
                     className={`tool-btn ${drawTool === 'eraser' ? 'active' : ''}`}
@@ -2913,6 +2990,7 @@ export default function App() {
                   <span className="group-label">History</span>
                   <button className="tool-btn" onClick={undo} title="Undo (⌘/Ctrl+Z)">↶</button>
                   <button className="tool-btn" onClick={redo} title="Redo (⌘/Ctrl+Shift+Z)">↷</button>
+                  <button className="tool-btn" onClick={invertCanvas} title="Invert colors">🔄</button>
                 </div>
 
                 <div className="io-buttons">
