@@ -619,6 +619,7 @@ export default function App() {
   // Draw mode
   const [isDrawMode, setIsDrawMode] = useState(false);
   const [visionPrompt, setVisionPrompt] = useState('');
+  const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
   const [brushSize, setBrushSize] = useState(8);
   const [drawColor, setDrawColor] = useState('#000000');
   const [drawTool, setDrawTool] = useState<'brush' | 'square' | 'calligraphy' | 'eraser'>('brush');
@@ -2432,7 +2433,7 @@ export default function App() {
                   </button>
                   <div className="tb-title">Draw</div>
                 </div>
-                <div className="tb-center">
+                <div className="tb-center" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <input
                     type="text"
                     value={visionPrompt}
@@ -2444,7 +2445,37 @@ export default function App() {
                     }}
                     placeholder="Describe your vision…"
                     className="vision-input pro"
+                    disabled={isEnhancingPrompt}
                   />
+                  <button
+                    className="tool-btn"
+                    onClick={async () => {
+                      if (!visionPrompt.trim() || isEnhancingPrompt) return;
+                      setIsEnhancingPrompt(true);
+                      try {
+                        const response = await fetch(`https://prompt.sogni.ai/?query=${encodeURIComponent(visionPrompt)}`);
+                        if (response.status === 200) {
+                          const data = await response.json();
+                          if (data.prompt) {
+                            setVisionPrompt(data.prompt);
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Failed to enhance prompt:', error);
+                      } finally {
+                        setIsEnhancingPrompt(false);
+                      }
+                    }}
+                    disabled={!visionPrompt.trim() || isEnhancingPrompt}
+                    title="Prompt Enhancer"
+                    style={{ 
+                      fontSize: '1.2rem',
+                      opacity: !visionPrompt.trim() || isEnhancingPrompt ? 0.5 : 1,
+                      cursor: !visionPrompt.trim() || isEnhancingPrompt ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {isEnhancingPrompt ? '⏳' : '🪄'}
+                  </button>
                 </div>
                 <div className="tb-right">
                   <button className="tool-btn" onClick={undo} title="Undo (⌘/Ctrl+Z)">↶</button>
@@ -2685,18 +2716,52 @@ export default function App() {
             </div>
 
             {/* Prompt input */}
-            <input
-              type="text"
-              value={visionPrompt}
-              onChange={(e) => setVisionPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && visionPrompt.trim()) {
-                  handleCreate();
-                }
-              }}
-              placeholder="Describe your vision…"
-              className="vision-input"
-            />
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                type="text"
+                value={visionPrompt}
+                onChange={(e) => setVisionPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && visionPrompt.trim()) {
+                    handleCreate();
+                  }
+                }}
+                placeholder="Describe your vision…"
+                className="vision-input"
+                style={{ flex: 1 }}
+                disabled={isEnhancingPrompt}
+              />
+              <button
+                className="icon-btn"
+                onClick={async () => {
+                  if (!visionPrompt.trim() || isEnhancingPrompt) return;
+                  setIsEnhancingPrompt(true);
+                  try {
+                    const response = await fetch(`https://prompt.sogni.ai/?query=${encodeURIComponent(visionPrompt)}`);
+                    if (response.status === 200) {
+                      const data = await response.json();
+                      if (data.prompt) {
+                        setVisionPrompt(data.prompt);
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Failed to enhance prompt:', error);
+                  } finally {
+                    setIsEnhancingPrompt(false);
+                  }
+                }}
+                disabled={!visionPrompt.trim() || isEnhancingPrompt}
+                title="Prompt Enhancer"
+                style={{ 
+                  fontSize: '1.2rem',
+                  opacity: !visionPrompt.trim() || isEnhancingPrompt ? 0.5 : 1,
+                  cursor: !visionPrompt.trim() || isEnhancingPrompt ? 'not-allowed' : 'pointer',
+                  minWidth: '40px'
+                }}
+              >
+                {isEnhancingPrompt ? '⏳' : '🪄'}
+              </button>
+            </div>
 
             {/* Tools row */}
             <div className="draw-controls">
