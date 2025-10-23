@@ -2455,9 +2455,9 @@ export default function App() {
                       try {
                         const response = await fetch(`https://prompt.sogni.ai/?query=${encodeURIComponent(visionPrompt)}`);
                         if (response.status === 200) {
-                          const data = await response.json();
-                          if (data.prompt) {
-                            setVisionPrompt(data.prompt);
+                          const enhancedPrompt = await response.text();
+                          if (enhancedPrompt) {
+                            setVisionPrompt(enhancedPrompt);
                           }
                         }
                       } catch (error) {
@@ -2739,9 +2739,9 @@ export default function App() {
                   try {
                     const response = await fetch(`https://prompt.sogni.ai/?query=${encodeURIComponent(visionPrompt)}`);
                     if (response.status === 200) {
-                      const data = await response.json();
-                      if (data.prompt) {
-                        setVisionPrompt(data.prompt);
+                      const enhancedPrompt = await response.text();
+                      if (enhancedPrompt) {
+                        setVisionPrompt(enhancedPrompt);
                       }
                     }
                   } catch (error) {
