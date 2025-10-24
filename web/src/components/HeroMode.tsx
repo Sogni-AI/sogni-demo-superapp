@@ -273,85 +273,150 @@ export default function HeroMode(props: HeroModeProps) {
             handleSpacebarToggle();
           }
         }}
-        style={{ cursor: 'pointer' }}
+        style={{ cursor: isMobile ? 'default' : 'pointer' }}
         aria-label="Toggle compare (Space or Enter)"
       >
-        {heroIndex + 1} / {(heroSession || currentSession)?.images.length || 0}
-        {isMobile && <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem' }}>Swipe to navigate</div>}
+        {isMobile ? (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{heroIndex + 1} / {(heroSession || currentSession)?.images.length || 0}</span>
+              <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>Swipe to navigate</span>
+            </div>
+            {(() => {
+              const activeSession = heroSession || currentSession;
+              const historySession = activeSession === heroSession ? heroSession : currentSession;
+              const history = historySession?.controlnetHistory || [];
+              const stickyCompare = historySession?.compareAgainstUrl || originalSketch || '';
 
-        {(() => {
-          const activeSession = heroSession || currentSession;
-          const historySession = activeSession === heroSession ? heroSession : currentSession;
-          const history = historySession?.controlnetHistory || [];
-          const stickyCompare = historySession?.compareAgainstUrl || originalSketch || '';
+              if (heroSession && (history.length > 0 || stickyCompare)) {
+                const lastIdx = getLastNonOriginalIndex(history);
+                const hasCompare = lastIdx !== -1 || !!stickyCompare;
+                if (hasCompare) {
+                  const currentLabel = showOriginalSketch ? 'Parent influence' : 'Current design';
+                  return (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: '#ff6b35', fontSize: '0.8rem' }}>
+                        {currentLabel} ({showOriginalSketch ? '1' : '2'}/2)
+                      </span>
+                      <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>
+                        Tap to toggle
+                      </span>
+                    </div>
+                  );
+                }
+              }
 
-          if (heroSession && (history.length > 0 || stickyCompare)) {
-            const lastIdx = getLastNonOriginalIndex(history);
-            const hasCompare = lastIdx !== -1 || !!stickyCompare;
-            if (hasCompare) {
-              const currentLabel = showOriginalSketch ? 'Parent influence' : 'Current design';
-              const nextLabel = showOriginalSketch ? 'current design' : 'parent influence';
-              return (
-                <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem', color: '#ff6b35' }}>
-                  <div style={{ marginBottom: '2px' }}>
-                    {currentLabel}
-                    <span style={{ opacity: 0.6, marginLeft: 8 }}>
-                      ({showOriginalSketch ? '1' : '2'}/2)
+              if (history.length > 0) {
+                const totalStates = history.length + 1;
+                const labelFor = (i: number) => {
+                  if (i < history.length) return history[i]?.isOriginalSketch ? 'Original sketch' : `Iteration ${i}`;
+                  return 'Current design';
+                };
+                const currentLabel = labelFor(currentHistoryIndex);
+
+                return (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#ff6b35', fontSize: '0.8rem' }}>
+                      {currentLabel} ({currentHistoryIndex + 1}/{totalStates})
+                    </span>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>
+                      Tap to cycle
                     </span>
                   </div>
-                  <div>
-                    <span style={{ background: 'rgba(255,107,53,0.2)', padding: '2px 6px', borderRadius: 4 }}>
-                      SPACE or CLICK
-                    </span>{' '}
-                    Show {nextLabel}
+                );
+              } else if (stickyCompare) {
+                return (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#ff6b35', fontSize: '0.8rem' }}>
+                      Compare mode
+                    </span>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>
+                      Tap to toggle
+                    </span>
                   </div>
-                </div>
-              );
-            }
-          }
+                );
+              }
+              return null;
+            })()}
+          </>
+        ) : (
+          <>
+            {heroIndex + 1} / {(heroSession || currentSession)?.images.length || 0}
+            {(() => {
+              const activeSession = heroSession || currentSession;
+              const historySession = activeSession === heroSession ? heroSession : currentSession;
+              const history = historySession?.controlnetHistory || [];
+              const stickyCompare = historySession?.compareAgainstUrl || originalSketch || '';
 
-          if (history.length > 0) {
-            const totalStates = history.length + 1;
-            const nextIndex = (currentHistoryIndex + 1) % totalStates;
+              if (heroSession && (history.length > 0 || stickyCompare)) {
+                const lastIdx = getLastNonOriginalIndex(history);
+                const hasCompare = lastIdx !== -1 || !!stickyCompare;
+                if (hasCompare) {
+                  const currentLabel = showOriginalSketch ? 'Parent influence' : 'Current design';
+                  const nextLabel = showOriginalSketch ? 'current design' : 'parent influence';
+                  return (
+                    <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem', color: '#ff6b35' }}>
+                      <div style={{ marginBottom: '2px' }}>
+                        {currentLabel}
+                        <span style={{ opacity: 0.6, marginLeft: 8 }}>
+                          ({showOriginalSketch ? '1' : '2'}/2)
+                        </span>
+                      </div>
+                      <div>
+                        <span style={{ background: 'rgba(255,107,53,0.2)', padding: '2px 6px', borderRadius: 4 }}>
+                          SPACE or CLICK
+                        </span>{' '}
+                        Show {nextLabel}
+                      </div>
+                    </div>
+                  );
+                }
+              }
 
-            const labelFor = (i: number) => {
-              if (i < history.length) return history[i]?.isOriginalSketch ? 'original sketch' : `iteration ${i}`;
-              return 'current design';
-            };
+              if (history.length > 0) {
+                const totalStates = history.length + 1;
+                const nextIndex = (currentHistoryIndex + 1) % totalStates;
 
-            const currentLabel = labelFor(currentHistoryIndex).replace(/\b\w/g, s => s.toUpperCase());
-            const nextLabel = labelFor(nextIndex);
+                const labelFor = (i: number) => {
+                  if (i < history.length) return history[i]?.isOriginalSketch ? 'original sketch' : `iteration ${i}`;
+                  return 'current design';
+                };
 
-            return (
-              <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem', color: '#ff6b35' }}>
-                <div style={{ marginBottom: '2px' }}>
-                  {currentLabel}
-                  <span style={{ opacity: 0.6, marginLeft: 8 }}>
-                    ({currentHistoryIndex + 1}/{totalStates})
-                  </span>
-                </div>
-                <div>
-                  <span style={{ background: 'rgba(255,107,53,0.2)', padding: '2px 6px', borderRadius: 4 }}>
-                    SPACE or CLICK
-                  </span>{' '}
-                  Show {nextLabel}
-                </div>
-              </div>
-            );
-          } else if (stickyCompare) {
-            return (
-              <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem', color: '#ff6b35' }}>
-                <div>
-                  <span style={{ background: 'rgba(255,107,53,0.2)', padding: '2px 6px', borderRadius: 4 }}>
-                    SPACE or CLICK
-                  </span>{' '}
-                  Toggle compare
-                </div>
-              </div>
-            );
-          }
-          return null;
-        })()}
+                const currentLabel = labelFor(currentHistoryIndex).replace(/\b\w/g, s => s.toUpperCase());
+                const nextLabel = labelFor(nextIndex);
+
+                return (
+                  <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem', color: '#ff6b35' }}>
+                    <div style={{ marginBottom: '2px' }}>
+                      {currentLabel}
+                      <span style={{ opacity: 0.6, marginLeft: 8 }}>
+                        ({currentHistoryIndex + 1}/{totalStates})
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ background: 'rgba(255,107,53,0.2)', padding: '2px 6px', borderRadius: 4 }}>
+                        SPACE or CLICK
+                      </span>{' '}
+                      Show {nextLabel}
+                    </div>
+                  </div>
+                );
+              } else if (stickyCompare) {
+                return (
+                  <div style={{ fontSize: '0.65rem', opacity: 0.8, marginTop: '0.25rem', color: '#ff6b35' }}>
+                    <div>
+                      <span style={{ background: 'rgba(255,107,53,0.2)', padding: '2px 6px', borderRadius: 4 }}>
+                        SPACE or CLICK
+                      </span>{' '}
+                      Toggle compare
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+          </>
+        )}
       </div>
 
       {/* Refinement options or orbit of refinement results */}

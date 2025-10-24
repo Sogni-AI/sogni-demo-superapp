@@ -108,8 +108,8 @@ export default function MainMode({
         {currentSession?.error && <div className="error-message">{currentSession.error}</div>}
 
         {!currentSession?.images?.length && (
-          <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', opacity: 0.7, textAlign: 'center' }}>
-            Try something like “{TATTOO_SUGGESTIONS[0]}”, “{BASE_STYLES[0]}”, or paste in a photo in Draw mode.
+          <div className="tips-text" style={{ marginTop: isMobile ? '1rem' : '0.75rem', fontSize: isMobile ? '0.8rem' : '0.85rem', opacity: 0.7, textAlign: 'center', lineHeight: 1.4 }}>
+            Try something like "{TATTOO_SUGGESTIONS[0]}", "{BASE_STYLES[0]}", or paste in a photo in Draw mode.
           </div>
         )}
 
