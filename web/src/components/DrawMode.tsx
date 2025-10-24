@@ -830,6 +830,24 @@ export default function DrawMode({
     }
   };
 
+  const handleDesktopDisabledClick = () => {
+    // Only show hint if user has drawn something but hasn't entered a prompt
+    if (!visionPrompt.trim() && undoStack.length > 0) {
+      setShowPromptHint(true);
+
+      // Focus the input to make it even more obvious
+      const promptInput = document.querySelector('.vision-input') as HTMLInputElement;
+      if (promptInput) {
+        promptInput.focus();
+      }
+
+      // Auto-hide the hint after 3 seconds
+      setTimeout(() => {
+        setShowPromptHint(false);
+      }, 3000);
+    }
+  };
+
   // Initialize base white background + baseline undo snapshot
   useEffect(() => {
     const id = setTimeout(() => {
@@ -869,15 +887,23 @@ export default function DrawMode({
               <div className="tb-title">Draw</div>
             </div>
             <div className="tb-center" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="text"
-                value={visionPrompt}
-                onChange={(e) => setVisionPrompt(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && visionPrompt.trim()) handleCreate(); }}
-                placeholder="Describe your vision…"
-                className="vision-input pro"
-                disabled={isEnhancingPrompt}
-              />
+              <div className={`desktop-prompt-wrapper ${showPromptHint ? 'hint-active' : ''}`} style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={visionPrompt}
+                  onChange={(e) => setVisionPrompt(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && visionPrompt.trim()) handleCreate(); }}
+                  placeholder="Describe your vision…"
+                  className="vision-input pro"
+                  disabled={isEnhancingPrompt}
+                />
+                {showPromptHint && (
+                  <div className="desktop-prompt-hint">
+                    <span className="hint-arrow">👆</span>
+                    <span>Add a description</span>
+                  </div>
+                )}
+              </div>
               <button
                 className="tool-btn"
                 onClick={async () => {
@@ -914,9 +940,14 @@ export default function DrawMode({
               <button className="tool-btn" onClick={openFilePicker} title="Upload image (⌘/Ctrl+O)">⬆️</button>
               <button className="tool-btn" onClick={handleDownloadDrawing} title="Download PNG (⌘/Ctrl+S)">⬇️</button>
               <button
-                onClick={handleCreate}
-                disabled={!visionPrompt.trim()}
-                className="create-btn pro"
+                onClick={() => {
+                  if (visionPrompt.trim()) {
+                    handleCreate();
+                  } else {
+                    handleDesktopDisabledClick();
+                  }
+                }}
+                className={`create-btn pro ${!visionPrompt.trim() ? 'disabled' : ''}`}
                 title="Create 16 variations"
               >
                 Create
@@ -1158,10 +1189,14 @@ export default function DrawMode({
               💾
             </button>
             <button
-              className="mobile-fab-primary"
-              onClick={visionPrompt.trim() ? handleCreate : handleDisabledCreateClick}
-              disabled={!visionPrompt.trim()}
-              style={{ pointerEvents: 'auto' }}
+              className={`mobile-fab-primary ${!visionPrompt.trim() ? 'disabled' : ''}`}
+              onClick={() => {
+                if (visionPrompt.trim()) {
+                  handleCreate();
+                } else {
+                  handleDisabledCreateClick();
+                }
+              }}
             >
               <span style={{ fontSize: '1.5rem' }}>✨</span>
               <span style={{ fontSize: '0.7rem', marginTop: '2px' }}>Create</span>

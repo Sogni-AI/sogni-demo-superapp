@@ -2606,11 +2606,95 @@
         border-color: var(--accent-hover);
       }
 
-      .create-btn:disabled {
+      .create-btn:disabled,
+      .create-btn.disabled {
         opacity: 0.5;
         cursor: not-allowed;
         transform: rotate(0.3deg);
         animation: none;
+      }
+
+      /* Desktop prompt hint styles */
+      .desktop-prompt-wrapper {
+        position: relative;
+      }
+
+      .desktop-prompt-wrapper.hint-active .vision-input {
+        border-color: var(--accent);
+        background: rgba(220, 20, 60, 0.05);
+        animation: desktopGlow 0.5s ease-out;
+      }
+
+      .desktop-prompt-hint {
+        position: absolute;
+        bottom: -36px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        background: var(--accent);
+        border-radius: 20px;
+        color: white;
+        font-size: 0.85rem;
+        font-weight: 700;
+        white-space: nowrap;
+        z-index: 1000;
+        animation: desktopHintBounce 0.4s ease-out, desktopHintPulse 2s ease-in-out infinite;
+        box-shadow: 0 4px 12px rgba(220, 20, 60, 0.4);
+      }
+
+      .desktop-prompt-hint .hint-arrow {
+        font-size: 1.1rem;
+        animation: pointUpDesktop 1s ease-in-out infinite;
+      }
+
+      @keyframes desktopGlow {
+        0% {
+          box-shadow: var(--focus), 0 0 0 0 rgba(220, 20, 60, 0.4);
+        }
+        50% {
+          box-shadow: var(--focus), 0 0 20px 4px rgba(220, 20, 60, 0.3);
+        }
+        100% {
+          box-shadow: var(--focus), 0 0 0 0 rgba(220, 20, 60, 0);
+        }
+      }
+
+      @keyframes desktopHintBounce {
+        0% {
+          opacity: 0;
+          transform: translateX(-50%) translateY(10px);
+        }
+        50% {
+          transform: translateX(-50%) translateY(-5px);
+        }
+        100% {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+        }
+      }
+
+      @keyframes desktopHintPulse {
+        0%, 100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.85;
+        }
+      }
+
+      @keyframes pointUpDesktop {
+        0%, 100% {
+          transform: translateY(0);
+        }
+        25% {
+          transform: translateY(-3px);
+        }
+        75% {
+          transform: translateY(2px);
+        }
       }
 
       .drawing-canvas {
