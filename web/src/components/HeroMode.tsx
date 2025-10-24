@@ -141,6 +141,40 @@ export default function HeroMode(props: HeroModeProps) {
 
     if (!imageToDownload || imageToDownload.isNSFW) return;
 
+    // For mobile devices (iOS/Android), open image in new tab for native save
+    if (isMobile) {
+      // Open the image in a new tab/window
+      // This allows users to long-press and save to camera roll on iOS
+      // or use the native save options on Android
+      window.open(imageToDownload.url, '_blank');
+
+      // Show a brief instruction overlay
+      const instruction = document.createElement('div');
+      instruction.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 14px;
+        z-index: 10000;
+        pointer-events: none;
+        animation: fadeInOut 3s ease-in-out;
+      `;
+      instruction.textContent = 'Long press the image to save to camera roll';
+      document.body.appendChild(instruction);
+
+      setTimeout(() => {
+        instruction.remove();
+      }, 3000);
+
+      return;
+    }
+
+    // Desktop download behavior (unchanged)
     try {
       const response = await fetch(imageToDownload.url);
       const blob = await response.blob();
@@ -573,7 +607,11 @@ export default function HeroMode(props: HeroModeProps) {
             <div className="mobile-results-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span className="results-title">Refinement Results</span>
-                <span className="results-count">{heroSession.images.length} / 16</span>
+                <span className="results-count">
+                  {heroSession.generating && heroSession.images.length === 0
+                    ? 'Loading...'
+                    : `${heroSession.images.length} / 16`}
+                </span>
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
@@ -594,48 +632,98 @@ export default function HeroMode(props: HeroModeProps) {
               </div>
             </div>
             <div className="mobile-results-grid">
-              {heroSession.images.map((image, index) => (
-                <div
-                  key={image.id}
-                  className="mobile-result-item"
-                  style={{ '--appear-delay': `${index * 0.03}s` } as React.CSSProperties}
-                  onClick={() => { if (!image.isNSFW) onSelectOrbitImage(image); }}
-                >
-                  {image.isNSFW ? (
-                    <div className="nsfw-placeholder" style={{ width: '100%', height: '100%' }}>
-                      <span style={{ fontSize: '1.5rem' }}>🚫</span>
-                    </div>
-                  ) : (
-                    <img src={image.url} alt={`Result ${index + 1}`} loading="lazy" />
-                  )}
-                  <span className="result-number">{index + 1}</span>
+              {heroSession.generating && heroSession.images.length === 0 ? (
+                <div style={{
+                  gridColumn: '1 / -1',
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  color: '#888',
+                  fontSize: '0.9rem'
+                }}>
+                  <div style={{
+                    width: '40px',
+                    height: '40px',
+                    border: '3px solid #333',
+                    borderTopColor: '#fff',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    margin: '0 auto 15px'
+                  }}></div>
+                  <div>Generating refinement designs...</div>
+                  <div style={{ marginTop: '8px', fontSize: '0.8rem', opacity: 0.7 }}>
+                    This may take a few moments
+                  </div>
                 </div>
-              ))}
+              ) : (
+                heroSession.images.map((image, index) => (
+                  <div
+                    key={image.id}
+                    className="mobile-result-item"
+                    style={{ '--appear-delay': `${index * 0.03}s` } as React.CSSProperties}
+                    onClick={() => { if (!image.isNSFW) onSelectOrbitImage(image); }}
+                  >
+                    {image.isNSFW ? (
+                      <div className="nsfw-placeholder" style={{ width: '100%', height: '100%' }}>
+                        <span style={{ fontSize: '1.5rem' }}>🚫</span>
+                      </div>
+                    ) : (
+                      <img src={image.url} alt={`Result ${index + 1}`} loading="lazy" />
+                    )}
+                    <span className="result-number">{index + 1}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         ) : (
           // Desktop circular orbit
           <div className="orbit-container">
-            {heroSession.images.map((image, index) => {
-              const angle = (index * 360) / 16;
-              return (
-                <div
-                  key={image.id}
-                  className="orbit-image"
-                  style={{ '--angle': `${angle}deg`, '--delay': `${index * 0.1}s` } as React.CSSProperties}
-                  onClick={() => { if (!image.isNSFW) onSelectOrbitImage(image); }}
-                >
-                  {image.isNSFW ? (
-                    <div className="nsfw-placeholder orbit-img">
-                      <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🚫</div>
-                      <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>Content Filtered</div>
-                    </div>
-                  ) : (
-                    <img src={image.url} alt={`Variation ${index + 1}`} className="orbit-img" loading="lazy" decoding="async" />
-                  )}
+            {heroSession.generating && heroSession.images.length === 0 ? (
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                textAlign: 'center',
+                color: '#888',
+                fontSize: '0.9rem'
+              }}>
+                <div style={{
+                  width: '50px',
+                  height: '50px',
+                  border: '3px solid #333',
+                  borderTopColor: '#fff',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite',
+                  margin: '0 auto 20px'
+                }}></div>
+                <div>Generating refinement designs...</div>
+                <div style={{ marginTop: '10px', fontSize: '0.85rem', opacity: 0.7 }}>
+                  This may take a few moments
                 </div>
-              );
-            })}
+              </div>
+            ) : (
+              heroSession.images.map((image, index) => {
+                const angle = (index * 360) / 16;
+                return (
+                  <div
+                    key={image.id}
+                    className="orbit-image"
+                    style={{ '--angle': `${angle}deg`, '--delay': `${index * 0.1}s` } as React.CSSProperties}
+                    onClick={() => { if (!image.isNSFW) onSelectOrbitImage(image); }}
+                  >
+                    {image.isNSFW ? (
+                      <div className="nsfw-placeholder orbit-img">
+                        <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🚫</div>
+                        <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>Content Filtered</div>
+                      </div>
+                    ) : (
+                      <img src={image.url} alt={`Variation ${index + 1}`} className="orbit-img" loading="lazy" decoding="async" />
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         )
       )}
