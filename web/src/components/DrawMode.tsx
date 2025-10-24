@@ -60,6 +60,9 @@ export default function DrawMode({
   const [undoStack, setUndoStack] = useState<ImageData[]>([]);
   const [redoStack, setRedoStack] = useState<ImageData[]>([]);
 
+  // Prompt field indicator for mobile
+  const [showPromptHint, setShowPromptHint] = useState(false);
+
   // Calligraphy extras
   const [lastPos, setLastPos] = useState<{ x: number; y: number } | null>(null);
   const [drips, setDrips] = useState<
@@ -809,6 +812,24 @@ export default function DrawMode({
     });
   };
 
+  const handleDisabledCreateClick = () => {
+    // Only show hint if user has drawn something but hasn't entered a prompt
+    if (!visionPrompt.trim() && undoStack.length > 0) {
+      setShowPromptHint(true);
+
+      // Focus the input to make it even more obvious
+      const promptInput = document.querySelector('.mobile-prompt-input') as HTMLInputElement;
+      if (promptInput) {
+        promptInput.focus();
+      }
+
+      // Auto-hide the hint after 3 seconds
+      setTimeout(() => {
+        setShowPromptHint(false);
+      }, 3000);
+    }
+  };
+
   // Initialize base white background + baseline undo snapshot
   useEffect(() => {
     const id = setTimeout(() => {
@@ -1053,15 +1074,23 @@ export default function DrawMode({
                 <path d="M12 4L6 10L12 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </button>
-            <input
-              type="text"
-              value={visionPrompt}
-              onChange={(e) => setVisionPrompt(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && visionPrompt.trim()) handleCreate(); }}
-              placeholder="Describe your tattoo..."
-              className="mobile-prompt-input"
-              disabled={isEnhancingPrompt}
-            />
+            <div className={`mobile-prompt-wrapper ${showPromptHint ? 'hint-active' : ''}`}>
+              <input
+                type="text"
+                value={visionPrompt}
+                onChange={(e) => setVisionPrompt(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && visionPrompt.trim()) handleCreate(); }}
+                placeholder="Describe your tattoo..."
+                className="mobile-prompt-input"
+                disabled={isEnhancingPrompt}
+              />
+              {showPromptHint && (
+                <div className="prompt-hint-indicator">
+                  <span className="hint-arrow">👆</span>
+                  <span className="hint-text">Add a description</span>
+                </div>
+              )}
+            </div>
             <button
               className="mobile-header-btn"
               onClick={async () => {
@@ -1130,8 +1159,9 @@ export default function DrawMode({
             </button>
             <button
               className="mobile-fab-primary"
-              onClick={handleCreate}
+              onClick={visionPrompt.trim() ? handleCreate : handleDisabledCreateClick}
               disabled={!visionPrompt.trim()}
+              style={{ pointerEvents: 'auto' }}
             >
               <span style={{ fontSize: '1.5rem' }}>✨</span>
               <span style={{ fontSize: '0.7rem', marginTop: '2px' }}>Create</span>

@@ -52,6 +52,13 @@
   cursor: not-allowed;
 }
 
+.mobile-prompt-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .mobile-prompt-input {
   flex: 1;
   height: 36px;
@@ -72,6 +79,91 @@
 
 .mobile-prompt-input::placeholder {
   color: rgba(255, 255, 255, 0.4);
+}
+
+/* Prompt hint indicator */
+.prompt-hint-indicator {
+  position: absolute;
+  bottom: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: #ff6b35;
+  border-radius: 16px;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  z-index: 1000;
+  animation: hintBounce 0.4s ease-out, hintPulse 2s ease-in-out infinite;
+  box-shadow: 0 4px 8px rgba(255, 107, 53, 0.4);
+}
+
+.hint-arrow {
+  font-size: 1rem;
+  animation: pointUp 1s ease-in-out infinite;
+}
+
+.hint-text {
+  margin-top: 2px;
+}
+
+/* Hint active state for input wrapper */
+.mobile-prompt-wrapper.hint-active .mobile-prompt-input {
+  border-color: #ff6b35;
+  background: rgba(255, 107, 53, 0.1);
+  animation: subtleGlow 0.5s ease-out;
+}
+
+/* Animations */
+@keyframes hintBounce {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  50% {
+    transform: translateX(-50%) translateY(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes hintPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes pointUp {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(-3px);
+  }
+  75% {
+    transform: translateY(2px);
+  }
+}
+
+@keyframes subtleGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 53, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 12px 2px rgba(255, 107, 53, 0.3);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 53, 0);
+  }
 }
 
 /* Canvas Area */
@@ -186,6 +278,7 @@
 .mobile-fab-primary:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  pointer-events: auto !important; /* Allow clicks even when disabled to trigger hint */
 }
 
 .mobile-fab-secondary {
