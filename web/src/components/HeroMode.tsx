@@ -131,6 +131,33 @@ export default function HeroMode(props: HeroModeProps) {
     lastTapTime.current = currentTime;
   };
 
+  // Download current image
+  const handleDownload = async () => {
+    // Get the current image being displayed
+    let imageToDownload = heroImage;
+    if (heroSession && heroSession.images[heroIndex]) {
+      imageToDownload = heroSession.images[heroIndex];
+    }
+
+    if (!imageToDownload || imageToDownload.isNSFW) return;
+
+    try {
+      const response = await fetch(imageToDownload.url);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const date = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      a.href = url;
+      a.download = `sogni-tattoo-${date}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 800);
+    } catch (error) {
+      console.error('Failed to download image:', error);
+    }
+  };
+
   return (
     <div
       className="hero-mode"
@@ -444,9 +471,19 @@ export default function HeroMode(props: HeroModeProps) {
               <span className="options-title">
                 {isInitiatingRefinement ? 'Starting generation...' : 'Refine Design'}
               </span>
-              <button className="options-edit-btn" onClick={onOpenEdit} disabled={isInitiatingRefinement}>
-                Edit Prompt
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className="options-edit-btn"
+                  onClick={handleDownload}
+                  disabled={isInitiatingRefinement}
+                  aria-label="Download image"
+                >
+                  ⬇ Download
+                </button>
+                <button className="options-edit-btn" onClick={onOpenEdit} disabled={isInitiatingRefinement}>
+                  Edit Prompt
+                </button>
+              </div>
             </div>
             <div className="mobile-options-scroll">
               {isInitiatingRefinement ? (
@@ -534,8 +571,27 @@ export default function HeroMode(props: HeroModeProps) {
           // Mobile orbit results - grid layout
           <div className="mobile-hero-results">
             <div className="mobile-results-header">
-              <span className="results-title">Refinement Results</span>
-              <span className="results-count">{heroSession.images.length} / 16</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span className="results-title">Refinement Results</span>
+                <span className="results-count">{heroSession.images.length} / 16</span>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className="options-edit-btn"
+                  onClick={handleDownload}
+                  aria-label="Download image"
+                  style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                >
+                  ⬇ Download
+                </button>
+                <button
+                  className="options-edit-btn"
+                  onClick={onOpenEdit}
+                  style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                >
+                  Edit Prompt
+                </button>
+              </div>
             </div>
             <div className="mobile-results-grid">
               {heroSession.images.map((image, index) => (

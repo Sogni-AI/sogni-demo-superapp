@@ -1479,6 +1479,8 @@
         align-items: center;
         margin-bottom: 16px;
         padding: 0 4px;
+        flex-wrap: wrap;
+        gap: 8px;
       }
 
       .options-title {
@@ -1503,6 +1505,16 @@
       .options-edit-btn:active {
         transform: scale(0.95);
         background: rgba(255, 107, 53, 0.3);
+      }
+      .options-edit-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      @media (hover: hover) {
+        .options-edit-btn:hover:not(:disabled) {
+          background: rgba(255, 107, 53, 0.3);
+          border-color: rgba(255, 107, 53, 0.6);
+        }
       }
 
       .mobile-options-scroll {
@@ -1584,6 +1596,8 @@
         align-items: center;
         margin-bottom: 12px;
         padding: 0 4px;
+        flex-wrap: wrap;
+        gap: 8px;
       }
 
       .results-title {
@@ -2085,8 +2099,10 @@
           font-size: 1rem;
         }
 
-        .hero-nav-left, .hero-nav-right {
+        .hero-nav-left {
           left: 0.5rem;
+        }
+        .hero-nav-right {
           right: 0.5rem;
         }
 
