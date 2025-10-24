@@ -17,6 +17,8 @@ type HeroModeProps = {
   currentHistoryIndex: number;
   setCurrentHistoryIndex: React.Dispatch<React.SetStateAction<number>>;
 
+  isInitiatingRefinement: boolean;
+
   onNavigate: (dir: 'prev' | 'next') => void;
   onClose: () => void;
   onRefineClick: (option: typeof HERO_REFINEMENT_OPTIONS[number]) => void;
@@ -35,6 +37,7 @@ export default function HeroMode(props: HeroModeProps) {
   const {
     heroImage, heroIndex, currentSession, heroSession, selectedStyle, controlnetType, isMobile,
     showOriginalSketch, setShowOriginalSketch, currentHistoryIndex, setCurrentHistoryIndex,
+    isInitiatingRefinement,
     onNavigate, onClose, onRefineClick, onOpenEdit, onSelectOrbitImage,
     originalSketch, getLastNonOriginalIndex, handleSpacebarToggle, autoFocus
   } = props;
@@ -43,6 +46,17 @@ export default function HeroMode(props: HeroModeProps) {
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
   const [isSwipeInProgress, setIsSwipeInProgress] = useState(false);
+  const [showSwipeHint, setShowSwipeHint] = useState(true);
+
+  // Fade out swipe hint after 3 seconds
+  useEffect(() => {
+    if (isMobile && showSwipeHint) {
+      const timer = setTimeout(() => {
+        setShowSwipeHint(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [isMobile, showSwipeHint]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -178,8 +192,10 @@ export default function HeroMode(props: HeroModeProps) {
         )}
 
         {/* Mobile swipe hint */}
-        {isMobile && (
-          <div className="mobile-swipe-hint">
+        {isMobile && showSwipeHint && (
+          <div className="mobile-swipe-hint" style={{
+            animation: 'hintFadeInOut 3.5s forwards'
+          }}>
             ← Swipe to navigate →
           </div>
         )}
@@ -425,36 +441,66 @@ export default function HeroMode(props: HeroModeProps) {
           // Mobile refinement options - scrollable bottom sheet
           <div className="mobile-hero-options">
             <div className="mobile-options-header">
-              <span className="options-title">Refine Design</span>
-              <button className="options-edit-btn" onClick={onOpenEdit}>Edit Prompt</button>
+              <span className="options-title">
+                {isInitiatingRefinement ? 'Starting generation...' : 'Refine Design'}
+              </span>
+              <button className="options-edit-btn" onClick={onOpenEdit} disabled={isInitiatingRefinement}>
+                Edit Prompt
+              </button>
             </div>
             <div className="mobile-options-scroll">
-              {HERO_REFINEMENT_OPTIONS.map((option, index) => {
-                const hue = (index * 360) / HERO_REFINEMENT_OPTIONS.length;
-                const accentColor = `hsl(${hue}, 70%, 55%)`;
+              {isInitiatingRefinement ? (
+                <div style={{
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  color: 'var(--text-secondary)'
+                }}>
+                  <div className="hero-loading-spinner" style={{ margin: '0 auto 20px' }}></div>
+                  <div>Generating variations...</div>
+                </div>
+              ) : (
+                HERO_REFINEMENT_OPTIONS.map((option, index) => {
+                  const hue = (index * 360) / HERO_REFINEMENT_OPTIONS.length;
+                  const accentColor = `hsl(${hue}, 70%, 55%)`;
 
-                return (
-                  <button
-                    key={option.label}
-                    className="mobile-option-btn"
-                    style={
-                      {
-                        '--accent-color': accentColor,
-                        '--appear-delay': `${index * 0.03}s`
-                      } as React.CSSProperties
-                    }
-                    onClick={() => onRefineClick(option)}
-                  >
-                    <span className="option-emoji">{option.emoji || '✨'}</span>
-                    <span className="option-text">{option.label}</span>
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={option.label}
+                      className="mobile-option-btn"
+                      style={
+                        {
+                          '--accent-color': accentColor,
+                          '--appear-delay': `${index * 0.03}s`
+                        } as React.CSSProperties
+                      }
+                      onClick={() => onRefineClick(option)}
+                      disabled={isInitiatingRefinement}
+                    >
+                      <span className="option-emoji">{option.emoji || '✨'}</span>
+                      <span className="option-text">{option.label}</span>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </div>
         ) : (
           // Desktop circular layout
           <div className="hero-options-grid">
+            {isInitiatingRefinement ? (
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                textAlign: 'center',
+                color: 'var(--text-secondary)',
+                zIndex: 10
+              }}>
+                <div className="hero-loading-spinner" style={{ margin: '0 auto 20px' }}></div>
+                <div style={{ fontSize: '1.1rem' }}>Generating variations...</div>
+              </div>
+            ) : null}
             {HERO_REFINEMENT_OPTIONS.map((option, index) => {
               const angle = (index * 360) / 16;
               const hue = (index * 360) / HERO_REFINEMENT_OPTIONS.length;
@@ -470,10 +516,12 @@ export default function HeroMode(props: HeroModeProps) {
                       '--angle': `${angle}deg`,
                       '--delay': `${index * 0.05}s`,
                       '--rainbow-color': rainbowColor,
-                      '--rainbow-color-hover': rainbowColorHover
+                      '--rainbow-color-hover': rainbowColorHover,
+                      opacity: isInitiatingRefinement ? 0.3 : 1,
+                      pointerEvents: isInitiatingRefinement ? 'none' : 'auto'
                     } as React.CSSProperties
                   }
-                  onClick={() => onRefineClick(option)}
+                  onClick={() => !isInitiatingRefinement && onRefineClick(option)}
                 >
                   <span className="option-label">{option.label}</span>
                 </div>
@@ -498,8 +546,8 @@ export default function HeroMode(props: HeroModeProps) {
                   onClick={() => { if (!image.isNSFW) onSelectOrbitImage(image); }}
                 >
                   {image.isNSFW ? (
-                    <div className="nsfw-placeholder">
-                      <span>🚫</span>
+                    <div className="nsfw-placeholder" style={{ width: '100%', height: '100%' }}>
+                      <span style={{ fontSize: '1.5rem' }}>🚫</span>
                     </div>
                   ) : (
                     <img src={image.url} alt={`Result ${index + 1}`} loading="lazy" />

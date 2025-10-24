@@ -58,6 +58,7 @@ export default function App() {
   const [heroIndex, setHeroIndex] = useState(0);
   const [heroSession, setHeroSession] = useState<GenerationSession | null>(null);
   const [sessionHistory, setSessionHistory] = useState<GenerationSession[]>([]);
+  const [isInitiatingRefinement, setIsInitiatingRefinement] = useState(false);
 
   // Draw Mode toggle + stickies for compare
   const [isDrawMode, setIsDrawMode] = useState(false);
@@ -314,6 +315,7 @@ export default function App() {
       }
 
       setHeroSession(newHero);
+      setIsInitiatingRefinement(false);
       announce('Generating 16 variations...');
 
       try {
@@ -354,6 +356,7 @@ export default function App() {
 
         attachSSE(projectId, sessionId, basePrompt, setHeroSession);
       } catch (err: any) {
+        setIsInitiatingRefinement(false);
         setHeroSession(prev => (prev ? { ...prev, generating: false, error: err?.message || 'Failed to start generation' } : null));
       }
     },
@@ -453,6 +456,7 @@ export default function App() {
 
   const handleRefinementClick = (option: typeof HERO_REFINEMENT_OPTIONS[number]) => {
     if (!heroImage || !currentSession) return;
+    setIsInitiatingRefinement(true);
     const seed = option.lockSeed ? currentSession.seed : -1;
     const useControlnet = currentSession.isControlnet;
     const sourceImageUrl = useControlnet ? heroImage.url : undefined;
@@ -559,6 +563,7 @@ export default function App() {
           setShowOriginalSketch={setShowOriginalSketch}
           currentHistoryIndex={currentHistoryIndex}
           setCurrentHistoryIndex={setCurrentHistoryIndex}
+          isInitiatingRefinement={isInitiatingRefinement}
           onNavigate={navigateHero}
           onClose={closeHeroMode}
           onRefineClick={handleRefinementClick}
