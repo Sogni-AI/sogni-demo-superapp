@@ -36,22 +36,22 @@ export const TATTOO_SUGGESTIONS = [
 ];
 
 export const HERO_REFINEMENT_OPTIONS = [
-  { label: 'More Realistic', value: 'photorealistic, detailed shading, lifelike rendering', lockSeed: true },
-  { label: 'More Geometric', value: 'geometric patterns, angular shapes, precise lines', lockSeed: true },
-  { label: 'More Organic', value: 'flowing curves, natural forms, soft edges', lockSeed: true },
-  { label: 'More Color', value: 'vibrant colors, rich palette, colorful design', lockSeed: true },
-  { label: 'More Traditional', value: 'classic tattoo style, bold outlines, traditional approach', lockSeed: true },
-  { label: 'More Minimal', value: 'clean design, negative space, simple forms', lockSeed: true },
-  { label: 'More Detailed', value: 'intricate elements, complex textures, rich detail', lockSeed: true },
-  { label: 'More Abstract', value: 'abstract interpretation, artistic expression, creative style', lockSeed: true },
-  { label: 'More Bold', value: 'strong outlines, high contrast, dramatic impact', lockSeed: true },
-  { label: 'More Delicate', value: 'fine lines, subtle details, gentle approach', lockSeed: true },
-  { label: 'More Dark', value: 'deep shadows, black ink, moody atmosphere', lockSeed: true },
-  { label: 'More Ornate', value: 'decorative elements, ornamental design, elaborate details', lockSeed: true },
-  { label: 'More Stylized', value: 'artistic interpretation, unique style, creative approach', lockSeed: true },
-  { label: 'More Dynamic', value: 'movement, energy, dynamic composition', lockSeed: true },
-  { label: 'More Textured', value: 'rich textures, surface details, tactile quality', lockSeed: true },
-  { label: 'More Variations', value: 'same concept, different interpretation', lockSeed: false }
+  { label: 'More Realistic', value: 'photorealistic, detailed shading, lifelike rendering', lockSeed: true, emoji: '📸' },
+  { label: 'More Geometric', value: 'geometric patterns, angular shapes, precise lines', lockSeed: true, emoji: '📐' },
+  { label: 'More Organic', value: 'flowing curves, natural forms, soft edges', lockSeed: true, emoji: '🌿' },
+  { label: 'More Color', value: 'vibrant colors, rich palette, colorful design', lockSeed: true, emoji: '🎨' },
+  { label: 'More Traditional', value: 'classic tattoo style, bold outlines, traditional approach', lockSeed: true, emoji: '⚓' },
+  { label: 'More Minimal', value: 'clean design, negative space, simple forms', lockSeed: true, emoji: '⚪' },
+  { label: 'More Detailed', value: 'intricate elements, complex textures, rich detail', lockSeed: true, emoji: '🔍' },
+  { label: 'More Abstract', value: 'abstract interpretation, artistic expression, creative style', lockSeed: true, emoji: '🌀' },
+  { label: 'More Bold', value: 'strong outlines, high contrast, dramatic impact', lockSeed: true, emoji: '💪' },
+  { label: 'More Delicate', value: 'fine lines, subtle details, gentle approach', lockSeed: true, emoji: '🪶' },
+  { label: 'More Dark', value: 'deep shadows, black ink, moody atmosphere', lockSeed: true, emoji: '🌑' },
+  { label: 'More Ornate', value: 'decorative elements, ornamental design, elaborate details', lockSeed: true, emoji: '👑' },
+  { label: 'More Stylized', value: 'artistic interpretation, unique style, creative approach', lockSeed: true, emoji: '🎭' },
+  { label: 'More Dynamic', value: 'movement, energy, dynamic composition', lockSeed: true, emoji: '⚡' },
+  { label: 'More Textured', value: 'rich textures, surface details, tactile quality', lockSeed: true, emoji: '🧱' },
+  { label: 'More Variations', value: 'same concept, different interpretation', lockSeed: false, emoji: '🔄' }
 ];
 
 // Max device pixel ratio to cap canvas buffers (perf/memory)

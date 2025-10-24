@@ -1,5 +1,5 @@
 // web/src/components/HeroMode.tsx
-import React from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { ControlnetIteration, GenerationSession, TattooImage } from '../types';
 import { HERO_REFINEMENT_OPTIONS } from '../constants';
 
@@ -39,6 +39,84 @@ export default function HeroMode(props: HeroModeProps) {
     originalSketch, getLastNonOriginalIndex, handleSpacebarToggle, autoFocus
   } = props;
 
+  // Touch gesture handling for mobile swipes
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const [isSwipeInProgress, setIsSwipeInProgress] = useState(false);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    setIsSwipeInProgress(false);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartX.current || !touchStartY.current) return;
+
+    const touchEndX = e.touches[0].clientX;
+    const touchEndY = e.touches[0].clientY;
+
+    const deltaX = touchEndX - touchStartX.current;
+    const deltaY = touchEndY - touchStartY.current;
+
+    // Check if horizontal swipe is more significant than vertical
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 30) {
+      setIsSwipeInProgress(true);
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartX.current || !touchStartY.current || !isSwipeInProgress) {
+      touchStartX.current = null;
+      touchStartY.current = null;
+      return;
+    }
+
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+
+    const deltaX = touchEndX - touchStartX.current;
+    const deltaY = touchEndY - touchStartY.current;
+
+    // Swipe threshold (50px minimum)
+    const minSwipeDistance = 50;
+
+    // Check for horizontal swipe
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > minSwipeDistance) {
+      if (deltaX > 0) {
+        // Swipe right - go to previous image
+        onNavigate('prev');
+      } else {
+        // Swipe left - go to next image
+        onNavigate('next');
+      }
+    }
+
+    // Check for vertical swipe down to close
+    if (deltaY > minSwipeDistance * 2 && Math.abs(deltaY) > Math.abs(deltaX)) {
+      onClose();
+    }
+
+    touchStartX.current = null;
+    touchStartY.current = null;
+    setIsSwipeInProgress(false);
+  };
+
+  // Double tap to toggle original sketch
+  const lastTapTime = useRef<number>(0);
+  const handleDoubleTap = (e: React.TouchEvent) => {
+    const currentTime = new Date().getTime();
+    const tapDelay = currentTime - lastTapTime.current;
+
+    if (tapDelay < 300 && tapDelay > 0) {
+      // Double tap detected
+      e.preventDefault();
+      handleSpacebarToggle();
+    }
+
+    lastTapTime.current = currentTime;
+  };
+
   return (
     <div
       className="hero-mode"
@@ -52,7 +130,13 @@ export default function HeroMode(props: HeroModeProps) {
       autoFocus={autoFocus}
     >
       {/* Central Hero Image */}
-      <div className="hero-center">
+      <div
+        className="hero-center"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchEndCapture={handleDoubleTap}
+      >
         {(() => {
           const activeSession = heroSession || currentSession;
           const historySession = activeSession === heroSession ? heroSession : currentSession;
@@ -91,6 +175,24 @@ export default function HeroMode(props: HeroModeProps) {
           <div className="hero-loading">
             <div className="hero-loading-spinner"></div>
           </div>
+        )}
+
+        {/* Mobile swipe hint */}
+        {isMobile && (
+          <div className="mobile-swipe-hint">
+            ← Swipe to navigate →
+          </div>
+        )}
+
+        {/* Mobile close button */}
+        {isMobile && (
+          <button
+            className="mobile-hero-close"
+            onClick={onClose}
+            aria-label="Close hero view"
+          >
+            ×
+          </button>
         )}
 
         {!heroSession && (
@@ -254,55 +356,119 @@ export default function HeroMode(props: HeroModeProps) {
 
       {/* Refinement options or orbit of refinement results */}
       {!heroSession ? (
-        <div className="hero-options-grid">
-          {HERO_REFINEMENT_OPTIONS.map((option, index) => {
-            const angle = (index * 360) / 16;
-            const hue = (index * 360) / HERO_REFINEMENT_OPTIONS.length;
-            const rainbowColor = `hsl(${hue}, 70%, 60%)`;
-            const rainbowColorHover = `hsl(${hue}, 80%, 50%)`;
+        isMobile ? (
+          // Mobile refinement options - scrollable bottom sheet
+          <div className="mobile-hero-options">
+            <div className="mobile-options-header">
+              <span className="options-title">Refine Design</span>
+              <button className="options-edit-btn" onClick={onOpenEdit}>Edit Prompt</button>
+            </div>
+            <div className="mobile-options-scroll">
+              {HERO_REFINEMENT_OPTIONS.map((option, index) => {
+                const hue = (index * 360) / HERO_REFINEMENT_OPTIONS.length;
+                const accentColor = `hsl(${hue}, 70%, 55%)`;
 
-            return (
-              <div
-                key={option.label}
-                className="hero-option"
-                style={
-                  {
-                    '--angle': `${angle}deg`,
-                    '--delay': `${index * 0.05}s`,
-                    '--rainbow-color': rainbowColor,
-                    '--rainbow-color-hover': rainbowColorHover
-                  } as React.CSSProperties
-                }
-                onClick={() => onRefineClick(option)}
-              >
-                <span className="option-label">{option.label}</span>
-              </div>
-            );
-          })}
-        </div>
+                return (
+                  <button
+                    key={option.label}
+                    className="mobile-option-btn"
+                    style={
+                      {
+                        '--accent-color': accentColor,
+                        '--appear-delay': `${index * 0.03}s`
+                      } as React.CSSProperties
+                    }
+                    onClick={() => onRefineClick(option)}
+                  >
+                    <span className="option-emoji">{option.emoji || '✨'}</span>
+                    <span className="option-text">{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          // Desktop circular layout
+          <div className="hero-options-grid">
+            {HERO_REFINEMENT_OPTIONS.map((option, index) => {
+              const angle = (index * 360) / 16;
+              const hue = (index * 360) / HERO_REFINEMENT_OPTIONS.length;
+              const rainbowColor = `hsl(${hue}, 70%, 60%)`;
+              const rainbowColorHover = `hsl(${hue}, 80%, 50%)`;
+
+              return (
+                <div
+                  key={option.label}
+                  className="hero-option"
+                  style={
+                    {
+                      '--angle': `${angle}deg`,
+                      '--delay': `${index * 0.05}s`,
+                      '--rainbow-color': rainbowColor,
+                      '--rainbow-color-hover': rainbowColorHover
+                    } as React.CSSProperties
+                  }
+                  onClick={() => onRefineClick(option)}
+                >
+                  <span className="option-label">{option.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )
       ) : (
-        <div className="orbit-container">
-          {heroSession.images.map((image, index) => {
-            const angle = (index * 360) / 16;
-            return (
-              <div
-                key={image.id}
-                className="orbit-image"
-                style={{ '--angle': `${angle}deg`, '--delay': `${index * 0.1}s` } as React.CSSProperties}
-                onClick={() => { if (!image.isNSFW) onSelectOrbitImage(image); }}
-              >
-                {image.isNSFW ? (
-                  <div className="nsfw-placeholder orbit-img">
-                    <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🚫</div>
-                    <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>Content Filtered</div>
-                  </div>
-                ) : (
-                  <img src={image.url} alt={`Variation ${index + 1}`} className="orbit-img" loading="lazy" decoding="async" />
-                )}
-              </div>
-            );
-          })}
-        </div>
+        isMobile ? (
+          // Mobile orbit results - grid layout
+          <div className="mobile-hero-results">
+            <div className="mobile-results-header">
+              <span className="results-title">Refinement Results</span>
+              <span className="results-count">{heroSession.images.length} / 16</span>
+            </div>
+            <div className="mobile-results-grid">
+              {heroSession.images.map((image, index) => (
+                <div
+                  key={image.id}
+                  className="mobile-result-item"
+                  style={{ '--appear-delay': `${index * 0.03}s` } as React.CSSProperties}
+                  onClick={() => { if (!image.isNSFW) onSelectOrbitImage(image); }}
+                >
+                  {image.isNSFW ? (
+                    <div className="nsfw-placeholder">
+                      <span>🚫</span>
+                    </div>
+                  ) : (
+                    <img src={image.url} alt={`Result ${index + 1}`} loading="lazy" />
+                  )}
+                  <span className="result-number">{index + 1}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          // Desktop circular orbit
+          <div className="orbit-container">
+            {heroSession.images.map((image, index) => {
+              const angle = (index * 360) / 16;
+              return (
+                <div
+                  key={image.id}
+                  className="orbit-image"
+                  style={{ '--angle': `${angle}deg`, '--delay': `${index * 0.1}s` } as React.CSSProperties}
+                  onClick={() => { if (!image.isNSFW) onSelectOrbitImage(image); }}
+                >
+                  {image.isNSFW ? (
+                    <div className="nsfw-placeholder orbit-img">
+                      <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🚫</div>
+                      <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>Content Filtered</div>
+                    </div>
+                  ) : (
+                    <img src={image.url} alt={`Variation ${index + 1}`} className="orbit-img" loading="lazy" decoding="async" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
       )}
     </div>
   );

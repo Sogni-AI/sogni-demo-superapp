@@ -1,6 +1,7 @@
 // web/src/components/DrawMode.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HISTORY_LIMIT, MAX_DPR } from '../constants';
+import './MobileDrawStyles.css';
 
 type DrawModeProps = {
   isMobile: boolean;
@@ -1043,27 +1044,26 @@ export default function DrawMode({
           </aside>
         </div>
       ) : (
-        /* ======= Mobile Layout ======= */
-        <div className="draw-center">
-          <div className="mobile-header">
-            <button className="icon-btn" onClick={onClose} aria-label="Close draw mode" title="Close">‹</button>
-            <div className="mobile-title">Draw</div>
-            <div style={{ inlineSize: 40 }} />
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        /* ======= Mobile Native App Layout ======= */
+        <div className="draw-mobile-native">
+          {/* Compact Top Bar */}
+          <div className="mobile-draw-header">
+            <button className="mobile-header-btn" onClick={onClose} aria-label="Close">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path d="M12 4L6 10L12 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
             <input
               type="text"
               value={visionPrompt}
               onChange={(e) => setVisionPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && visionPrompt.trim()) handleCreate(); }}
-              placeholder="Describe your vision…"
-              className="vision-input"
-              style={{ flex: 1 }}
+              placeholder="Describe your tattoo..."
+              className="mobile-prompt-input"
               disabled={isEnhancingPrompt}
             />
             <button
-              className="icon-btn"
+              className="mobile-header-btn"
               onClick={async () => {
                 if (!visionPrompt.trim() || isEnhancingPrompt) return;
                 setIsEnhancingPrompt(true);
@@ -1080,156 +1080,221 @@ export default function DrawMode({
                 }
               }}
               disabled={!visionPrompt.trim() || isEnhancingPrompt}
-              title="Prompt Enhancer"
-              style={{
-                fontSize: '1.2rem',
-                opacity: !visionPrompt.trim() || isEnhancingPrompt ? 0.5 : 1,
-                cursor: !visionPrompt.trim() || isEnhancingPrompt ? 'not-allowed' : 'pointer',
-                minWidth: '40px'
-              }}
+              title="Enhance"
             >
-              {isEnhancingPrompt ? '⏳' : '🪄'}
+              {isEnhancingPrompt ? '⏳' : '✨'}
             </button>
           </div>
 
-          {/* Tools */}
-          <div className="draw-controls">
-            <div className="tools-row">
-              <div className="tool-group">
-                <span className="group-label">Tools</span>
-                <button className={`tool-btn ${drawTool === 'brush' ? 'active' : ''}`} aria-pressed={drawTool === 'brush'} onClick={() => setDrawTool('brush')} title="Brush (B)">🖌️</button>
-                <button className={`tool-btn ${drawTool === 'calligraphy' ? 'active' : ''}`} aria-pressed={drawTool === 'calligraphy'} onClick={() => setDrawTool('calligraphy')} title="Calligraphy Pen (P)">🖋️</button>
-                <button className={`tool-btn ${drawTool === 'square' ? 'active' : ''}`} aria-pressed={drawTool === 'square'} onClick={() => setDrawTool('square')} title="Rectangle (R)">⬛</button>
-                <button className={`tool-btn ${drawTool === 'circle' ? 'active' : ''}`} aria-pressed={drawTool === 'circle'} onClick={() => setDrawTool('circle')} title="Circle (C)">⭕</button>
-                <button className={`tool-btn ${drawTool === 'eraser' ? 'active' : ''}`} aria-pressed={drawTool === 'eraser'} onClick={() => setDrawTool('eraser')} title="Eraser (E)">🧽</button>
-              </div>
-
-              <div className="tool-group">
-                <span className="group-label">Ink</span>
-                <div className="color-buttons">
-                  <button className={`color-btn black ${drawColor === '#000000' ? 'active' : ''}`} onClick={() => setDrawColor('#000000')} title="Black">⚫</button>
-                  <button className={`color-btn white ${drawColor === '#ffffff' ? 'active' : ''}`} onClick={() => setDrawColor('#ffffff')} title="White">⚪</button>
-                </div>
-              </div>
-
-              <div className="tool-group size-control">
-                <label>Size:</label>
-                <input type="range" min="2" max="40" value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="size-slider" aria-label="Brush size" />
-                <span>{brushSize}px</span>
-              </div>
-
-              <div className="tool-group toggle-buttons">
-                <span className="group-label">Toggles</span>
-                <button className="tool-btn" aria-pressed={smoothBrush} onClick={() => setSmoothBrush(v => !v)} title="Stroke smoothing">✨</button>
-                <button className="tool-btn" aria-pressed={showGrid} onClick={() => setShowGrid(v => !v)} title="Grid (G)">#️⃣</button>
-              </div>
-
-              <div className="tool-group symmetry-buttons">
-                <span className="group-label">Symmetry</span>
-                <button className="tool-btn" aria-pressed={symmetryH} onClick={() => setSymmetryH(v => !v)} title="Horizontal symmetry (H)">⇆</button>
-                <button className="tool-btn" aria-pressed={symmetryV} onClick={() => setSymmetryV(v => !v)} title="Vertical symmetry (V)">⇵</button>
-              </div>
-
-              <div className="tool-group">
-                <span className="group-label">ControlNet</span>
-                <div className="controlnet-control" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <label title="Understanding controlnets">
-                    <a
-                      href="https://stable-diffusion-art.com/controlnet/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="controlnet-help"
-                      style={{ textDecoration: 'none', color: '#fff', opacity: 0.7 }}
-                    >
-                      (?)
-                    </a>
-                  </label>
-                  <select
-                    value={controlnetType}
-                    onChange={(e) => setControlnetType(e.target.value)}
-                    className="controlnet-dropdown"
-                    title="Select ControlNet type for guidance"
-                  >
-                    <option value="scribble">scribble</option>
-                    <option value="canny">canny</option>
-                    <option value="inpaint">inpaint</option>
-                    <option value="instrp2p">instrp2p</option>
-                    <option value="lineart">lineart</option>
-                    <option value="lineartanime">lineartanime</option>
-                    <option value="shuffle">shuffle</option>
-                    <option value="softedge">softedge</option>
-                    <option value="tile">tile</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="tool-group undo-redo-buttons">
-                <span className="group-label">History</span>
-                <button className="tool-btn" onClick={undo} title="Undo (⌘/Ctrl+Z)">↶</button>
-                <button className="tool-btn" onClick={redo} title="Redo (⌘/Ctrl+Shift+Z)">↷</button>
-                <button className="tool-btn" onClick={invertCanvas} title="Invert colors">🔄</button>
-              </div>
-
-              <div className="io-buttons">
-                <button className="tool-btn" onClick={openFilePicker} title="Upload image (⌘/Ctrl+O)">⬆️</button>
-                <button className="tool-btn" onClick={handleDownloadDrawing} title="Download PNG (⌘/Ctrl+S)">⬇️</button>
-              </div>
-
-              <button onClick={clearCanvas} className="clear-btn" title="Clear canvas">🗑️</button>
-            </div>
-          </div>
-
-          <div className="mobile-card">
+          {/* Canvas Area */}
+          <div className="mobile-canvas-area">
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelected} style={{ display: 'none' }} />
-            <div className="drawing-canvas-wrapper">
-              <canvas
-                ref={canvasRef}
-                className="drawing-canvas"
-                onPointerDown={startDrawingPointer}
-                onPointerMove={drawPointer}
-                onPointerUp={endDrawingPointer}
-                onPointerCancel={endDrawingPointer}
-                onDragOver={handleCanvasDragOver}
-                onDragLeave={handleCanvasDragLeave}
-                onDrop={handleCanvasDrop}
-                aria-label="Drawing canvas"
-              />
-              {showGrid && <div className="grid-overlay" />}
-              {(symmetryH || symmetryV) && (
-                <div className={`sym-guides ${symmetryH ? 'h' : ''} ${symmetryV ? 'v' : ''}`} />
-              )}
-              {isDraggingOver && (
-                <div
-                  className="drop-overlay"
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '12px',
-                    border: '2px dashed #ff6b35',
-                    background: 'rgba(255,107,53,0.1)',
-                    fontWeight: 600,
-                    letterSpacing: 0.3,
-                    pointerEvents: 'none'
-                  }}
-                >
-                  Drop image to load
+            <canvas
+              ref={canvasRef}
+              className="mobile-drawing-canvas"
+              onPointerDown={startDrawingPointer}
+              onPointerMove={drawPointer}
+              onPointerUp={endDrawingPointer}
+              onPointerCancel={endDrawingPointer}
+              onDragOver={handleCanvasDragOver}
+              onDragLeave={handleCanvasDragLeave}
+              onDrop={handleCanvasDrop}
+              aria-label="Drawing canvas"
+            />
+            {showGrid && <div className="mobile-grid-overlay" />}
+            {(symmetryH || symmetryV) && (
+              <div className={`mobile-sym-guides ${symmetryH ? 'h' : ''} ${symmetryV ? 'v' : ''}`} />
+            )}
+            {isDraggingOver && (
+              <div className="mobile-drop-overlay">
+                Drop image here
+              </div>
+            )}
+          </div>
+
+          {/* Floating Action Buttons */}
+          <div className="mobile-fab-container">
+            <button
+              className="mobile-fab-secondary"
+              onClick={openFilePicker}
+              title="Upload"
+            >
+              📷
+            </button>
+            <button
+              className="mobile-fab-secondary"
+              onClick={handleDownloadDrawing}
+              title="Download"
+            >
+              💾
+            </button>
+            <button
+              className="mobile-fab-primary"
+              onClick={handleCreate}
+              disabled={!visionPrompt.trim()}
+            >
+              <span style={{ fontSize: '1.5rem' }}>✨</span>
+              <span style={{ fontSize: '0.7rem', marginTop: '2px' }}>Create</span>
+            </button>
+          </div>
+
+          {/* Bottom Toolbar */}
+          <div className="mobile-bottom-toolbar">
+            {/* Primary Tools */}
+            <div className="toolbar-section">
+              <button
+                className={`toolbar-btn ${drawTool === 'brush' ? 'active' : ''}`}
+                onClick={() => setDrawTool('brush')}
+              >
+                🖌️
+              </button>
+              <button
+                className={`toolbar-btn ${drawTool === 'calligraphy' ? 'active' : ''}`}
+                onClick={() => setDrawTool('calligraphy')}
+              >
+                🖋️
+              </button>
+              <button
+                className={`toolbar-btn ${drawTool === 'square' ? 'active' : ''}`}
+                onClick={() => setDrawTool('square')}
+              >
+                ⬛
+              </button>
+              <button
+                className={`toolbar-btn ${drawTool === 'circle' ? 'active' : ''}`}
+                onClick={() => setDrawTool('circle')}
+              >
+                ⭕
+              </button>
+              <button
+                className={`toolbar-btn ${drawTool === 'eraser' ? 'active' : ''}`}
+                onClick={() => setDrawTool('eraser')}
+              >
+                🧽
+              </button>
+            </div>
+
+            {/* Divider */}
+            <div className="toolbar-divider" />
+
+            {/* Color & Size */}
+            <div className="toolbar-section">
+              <button
+                className={`toolbar-btn ${drawColor === '#000000' ? 'active' : ''}`}
+                onClick={() => setDrawColor('#000000')}
+              >
+                ⚫
+              </button>
+              <button
+                className={`toolbar-btn ${drawColor === '#ffffff' ? 'active' : ''}`}
+                onClick={() => setDrawColor('#ffffff')}
+              >
+                ⚪
+              </button>
+              <div className="brush-size-control">
+                <input
+                  type="range"
+                  min="2"
+                  max="40"
+                  value={brushSize}
+                  onChange={(e) => setBrushSize(Number(e.target.value))}
+                  className="mobile-size-slider"
+                />
+                <span className="size-label">{brushSize}</span>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div className="toolbar-divider" />
+
+            {/* Actions */}
+            <div className="toolbar-section">
+              <button className="toolbar-btn" onClick={undo}>↶</button>
+              <button className="toolbar-btn" onClick={redo}>↷</button>
+              <button className="toolbar-btn" onClick={clearCanvas}>🗑️</button>
+            </div>
+
+            {/* More Options */}
+            <button
+              className="toolbar-btn more-btn"
+              onClick={() => {
+                // Toggle advanced options panel
+                const panel = document.querySelector('.mobile-options-panel');
+                if (panel) {
+                  panel.classList.toggle('open');
+                }
+              }}
+            >
+              ⋮
+            </button>
+          </div>
+
+          {/* Sliding Options Panel */}
+          <div className="mobile-options-panel">
+            <div className="options-handle"></div>
+            <div className="options-content">
+              <div className="option-group">
+                <label>Symmetry</label>
+                <div className="option-buttons">
+                  <button
+                    className={`option-btn ${symmetryH ? 'active' : ''}`}
+                    onClick={() => setSymmetryH(v => !v)}
+                  >
+                    H
+                  </button>
+                  <button
+                    className={`option-btn ${symmetryV ? 'active' : ''}`}
+                    onClick={() => setSymmetryV(v => !v)}
+                  >
+                    V
+                  </button>
                 </div>
-              )}
+              </div>
+
+              <div className="option-group">
+                <label>Guides</label>
+                <div className="option-buttons">
+                  <button
+                    className={`option-btn ${showGrid ? 'active' : ''}`}
+                    onClick={() => setShowGrid(v => !v)}
+                  >
+                    Grid
+                  </button>
+                  <button
+                    className={`option-btn ${smoothBrush ? 'active' : ''}`}
+                    onClick={() => setSmoothBrush(v => !v)}
+                  >
+                    Smooth
+                  </button>
+                </div>
+              </div>
+
+              <div className="option-group">
+                <label>ControlNet</label>
+                <select
+                  value={controlnetType}
+                  onChange={(e) => setControlnetType(e.target.value)}
+                  className="mobile-controlnet-select"
+                >
+                  <option value="scribble">scribble</option>
+                  <option value="canny">canny</option>
+                  <option value="inpaint">inpaint</option>
+                  <option value="instrp2p">instrp2p</option>
+                  <option value="lineart">lineart</option>
+                  <option value="lineartanime">lineartanime</option>
+                  <option value="shuffle">shuffle</option>
+                  <option value="softedge">softedge</option>
+                  <option value="tile">tile</option>
+                </select>
+              </div>
+
+              <div className="option-group">
+                <button className="option-btn" onClick={invertCanvas}>
+                  Invert Colors
+                </button>
+              </div>
             </div>
           </div>
-
-          <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', opacity: 0.7, textAlign: 'center' }}>
-            Tip: ⌘/Ctrl+O to upload, ⌘/Ctrl+S to download — you can also paste an image here.
-          </div>
-
-          <button onClick={handleCreate} disabled={!visionPrompt.trim()} className="create-btn">
-            Create
-          </button>
-
-          <button className="draw-close" onClick={onClose} aria-label="Close draw mode">×</button>
         </div>
       )}
     </div>
