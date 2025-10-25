@@ -65,7 +65,7 @@ export default function HeroMode(props: HeroModeProps) {
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!touchStartX.current || !touchStartY.current) return;
+    if (touchStartX.current == null || touchStartY.current == null) return;
 
     const touchEndX = e.touches[0].clientX;
     const touchEndY = e.touches[0].clientY;
@@ -80,7 +80,7 @@ export default function HeroMode(props: HeroModeProps) {
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStartX.current || !touchStartY.current || !isSwipeInProgress) {
+    if (touchStartX.current == null || touchStartY.current == null || !isSwipeInProgress) {
       touchStartX.current = null;
       touchStartY.current = null;
       return;

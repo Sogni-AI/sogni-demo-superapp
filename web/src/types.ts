@@ -28,7 +28,6 @@ export type GenerationSession = {
   error?: string | null;
   seed?: number;
   isControlnet?: boolean;
-  controlImageBlob?: Blob;
   controlnetHistory?: ControlnetIteration[];
   /** Sticky compare source (server-provided or local sketch) used when history is absent */
   compareAgainstUrl?: string;

@@ -44,6 +44,14 @@ export default function App() {
   const nextSessionId = useCallback(() => `session_${++sessionIdRef.current}`, []);
   const nextImageId = useCallback(() => `image_${++imageIdRef.current}`, []);
 
+  // Blob storage - keep blobs out of React state to avoid re-renders and memory bloat
+  const sessionControlBlobsRef = useRef<Map<string, Blob>>(new Map());
+
+  // Cleanup helper to free blob memory
+  const cleanupSessionBlob = useCallback((sessionId: string) => {
+    sessionControlBlobsRef.current.delete(sessionId);
+  }, []);
+
   // Core prompt/style
   const [prompt, setPrompt] = useState(
     () => TATTOO_SUGGESTIONS[Math.floor(Math.random() * TATTOO_SUGGESTIONS.length)]
@@ -63,7 +71,7 @@ export default function App() {
   // Draw Mode toggle + stickies for compare
   const [isDrawMode, setIsDrawMode] = useState(false);
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
-  const [originalControlBlob, setOriginalControlBlob] = useState<Blob | null>(null);
+  const originalControlBlobRef = useRef<Blob | null>(null);
   const [controlnetType, setControlnetType] = useState('scribble');
 
   // Compare state (global so Spacebar works in main + hero)
@@ -103,6 +111,9 @@ export default function App() {
     return () => {
       try { currentSessionRef.current?.sse?.close(); } catch {}
       try { heroSessionRef.current?.sse?.close(); } catch {}
+      // Clean up all stored blobs on unmount
+      sessionControlBlobsRef.current.clear();
+      originalControlBlobRef.current = null;
     };
   }, []);
 
@@ -180,6 +191,10 @@ export default function App() {
   // ---------- Network: starters ----------
   const startGeneration = useCallback(
     async (basePrompt: string, style: string, refinement = '') => {
+      // Clean up previous session blob if exists
+      if (currentSession?.id) {
+        cleanupSessionBlob(currentSession.id);
+      }
       currentSession?.sse?.close();
 
       const sessionId = nextSessionId();
@@ -219,11 +234,15 @@ export default function App() {
         setCurrentSession(prev => (prev ? { ...prev, generating: false, error: err?.message || 'Failed to start generation' } : null));
       }
     },
-    [announce, currentSession?.sse, nextSessionId]
+    [announce, currentSession?.id, currentSession?.sse, cleanupSessionBlob, nextSessionId]
   );
 
   const startGenerationWithControlnet = useCallback(
     async (basePrompt: string, style: string, controlImage: File | Blob, sketchDataUrl?: string, cnType?: string) => {
+      // Clean up previous session blob if exists
+      if (currentSession?.id) {
+        cleanupSessionBlob(currentSession.id);
+      }
       currentSession?.sse?.close();
 
       const sessionId = nextSessionId();
@@ -238,12 +257,14 @@ export default function App() {
         progress: 0,
         error: null,
         isControlnet: true,
-        controlImageBlob: controlImage as Blob,
         controlnetHistory: [
           { imageUrl: sketchDataUrl || originalSketch || '', prompt: basePrompt, isOriginalSketch: true }
         ],
         compareAgainstUrl: sketchDataUrl || originalSketch || undefined
       };
+
+      // Store the blob in the ref map instead of in state
+      sessionControlBlobsRef.current.set(sessionId, controlImage as Blob);
 
       setPrompt(basePrompt);
       setSelectedStyle('Simple Ink');
@@ -279,7 +300,7 @@ export default function App() {
         setCurrentSession(prev => (prev ? { ...prev, generating: false, error: err?.message || 'Failed to start generation' } : null));
       }
     },
-    [announce, currentSession?.sse, nextSessionId, originalSketch, controlnetType]
+    [announce, currentSession?.id, currentSession?.sse, cleanupSessionBlob, nextSessionId, originalSketch, controlnetType]
   );
 
   const startHeroGeneration = useCallback(
@@ -291,6 +312,10 @@ export default function App() {
       useControlnet?: boolean,
       sourceImageUrl?: string
     ) => {
+      // Clean up previous hero session blob if exists
+      if (heroSession?.id) {
+        cleanupSessionBlob(heroSession.id);
+      }
       heroSession?.sse?.close();
 
       const sessionId = nextSessionId();
@@ -328,12 +353,15 @@ export default function App() {
               const r = await fetch(sourceImageUrl);
               controlBlob = await r.blob();
             } catch {
-              controlBlob = originalControlBlob;
+              controlBlob = originalControlBlobRef.current;
             }
           } else {
-            controlBlob = originalControlBlob;
+            controlBlob = originalControlBlobRef.current;
           }
           if (!controlBlob) throw new Error('No control image available for controlnet generation');
+
+          // Store the blob for this hero session
+          sessionControlBlobsRef.current.set(sessionId, controlBlob);
 
           const form = new FormData();
           form.append('prompt', basePrompt);
@@ -360,7 +388,7 @@ export default function App() {
         setHeroSession(prev => (prev ? { ...prev, generating: false, error: err?.message || 'Failed to start generation' } : null));
       }
     },
-    [announce, currentSession, heroSession?.sse, nextSessionId, originalControlBlob, originalSketch, controlnetType]
+    [announce, currentSession, heroSession?.id, heroSession?.sse, cleanupSessionBlob, nextSessionId, originalSketch, controlnetType]
   );
 
   // ---------- UI helpers ----------
@@ -385,18 +413,26 @@ export default function App() {
     if (heroElement) {
       heroElement.style.animation = 'heroFadeOut 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards';
       setTimeout(() => {
+        // Clean up blob storage when closing hero session
+        if (heroSession?.id) {
+          cleanupSessionBlob(heroSession.id);
+        }
         setHeroImage(null);
         setHeroSession(null);
         setCurrentHistoryIndex(0);
         setShowOriginalSketch(false);
       }, 600);
     } else {
+      // Clean up blob storage when closing hero session
+      if (heroSession?.id) {
+        cleanupSessionBlob(heroSession.id);
+      }
       setHeroImage(null);
       setHeroSession(null);
       setCurrentHistoryIndex(0);
       setShowOriginalSketch(false);
     }
-  }, []);
+  }, [heroSession?.id, cleanupSessionBlob]);
 
   const getLastNonOriginalIndex = useCallback((hist: ControlnetIteration[] | undefined) => {
     if (!hist || hist.length === 0) return -1;
@@ -591,7 +627,7 @@ export default function App() {
           onClose={() => setIsDrawMode(false)}
           onCreate={async ({ prompt: p, style, controlnetType: cnType, controlBlob, sketchDataUrl }) => {
             setOriginalSketch(sketchDataUrl);
-            setOriginalControlBlob(controlBlob);
+            originalControlBlobRef.current = controlBlob;
             setSelectedStyle('Simple Ink');
             setIsDrawMode(false);
             setControlnetType(cnType);
