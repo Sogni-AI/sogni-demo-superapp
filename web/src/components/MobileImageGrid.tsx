@@ -31,8 +31,7 @@ const MobileImageGrid: React.FC<MobileImageGridProps> = ({
       const aspectRatio = width / height;
 
       // Stack view for very narrow screens or portrait orientation
-      // Lowered threshold from 360 to 320 to keep 2-up grid on iPhone
-      if (width < 320 || (aspectRatio < 0.5 && height > 800)) {
+      if (width < 360 || (aspectRatio < 0.6 && height > 700)) {
         setViewMode('stack');
       } else {
         setViewMode('grid');
