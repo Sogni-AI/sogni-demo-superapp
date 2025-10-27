@@ -361,6 +361,25 @@ export default function MobileStyles() {
       .draw-controls .tools-row {
         grid-template-columns: 1fr auto auto 1fr auto auto;
       }
+
+      /* Tablets can show 3 columns */
+      .mobile-image-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        padding: calc(180px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom)) 16px;
+      }
+
+      .mobile-image-grid.has-images {
+        padding-top: calc(80px + env(safe-area-inset-top));
+      }
+    }
+
+    /* Larger tablets can show 4 columns */
+    @media (min-width: 900px) {
+      .mobile-image-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+      }
     }
 
     /* ======== Pro Desktop Layout (>= 1024px) ======== */
@@ -371,16 +390,17 @@ export default function MobileStyles() {
       left: 0;
       right: 0;
       bottom: 0;
-      padding: calc(180px + env(safe-area-inset-top)) 8px calc(20px + env(safe-area-inset-bottom)) 8px;
+      padding: calc(180px + env(safe-area-inset-top)) 12px calc(20px + env(safe-area-inset-bottom)) 12px;
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(2, 1fr);
       grid-auto-rows: 1fr;
-      gap: 8px;
+      gap: 12px;
       overflow-y: auto;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
       z-index: 50;
       transition: padding-top 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      scroll-behavior: smooth;
     }
 
     /* When images are present, header collapses and we need less padding */
@@ -451,16 +471,17 @@ export default function MobileStyles() {
     .grid-image-item {
       position: relative;
       aspect-ratio: 1;
-      border-radius: 12px;
+      border-radius: 16px;
       overflow: hidden;
       background: rgba(255, 255, 255, 0.05);
-      border: 2px solid rgba(255, 255, 255, 0.1);
+      border: 2px solid rgba(255, 255, 255, 0.15);
       cursor: pointer;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       opacity: 0;
       animation: gridItemAppear 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
       animation-delay: var(--appear-delay, 0s);
       transform: scale(0.95);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     }
 
     @keyframes gridItemAppear {
@@ -494,15 +515,16 @@ export default function MobileStyles() {
 
     .image-number {
       position: absolute;
-      top: 6px;
-      right: 6px;
-      background: rgba(0, 0, 0, 0.7);
+      top: 8px;
+      right: 8px;
+      background: rgba(0, 0, 0, 0.8);
       color: white;
-      font-size: 0.7rem;
-      font-weight: 600;
-      padding: 2px 6px;
-      border-radius: 6px;
-      backdrop-filter: blur(4px);
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 8px;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
     }
 
     .image-overlay {
@@ -530,13 +552,14 @@ export default function MobileStyles() {
     .grid-image-placeholder {
       position: relative;
       aspect-ratio: 1;
-      border-radius: 12px;
+      border-radius: 16px;
       overflow: hidden;
       background: rgba(255, 255, 255, 0.03);
-      border: 2px solid rgba(255, 255, 255, 0.05);
+      border: 2px solid rgba(255, 255, 255, 0.08);
       opacity: 0;
       animation: gridItemAppear 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
       animation-delay: var(--appear-delay, 0s);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
 
     .placeholder-shimmer {

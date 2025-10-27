@@ -43,13 +43,11 @@ const MobileImageGrid: React.FC<MobileImageGridProps> = ({
     return () => window.removeEventListener('resize', checkViewMode);
   }, []);
 
-  // Smooth scroll to new images as they appear
+  // Smooth scroll to new images as they appear - but only if user is near the bottom
   useEffect(() => {
     if (currentSession.images.length > 0 && scrollContainerRef.current) {
-      const lastImage = scrollContainerRef.current.lastElementChild;
-      if (lastImage) {
-        lastImage.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+      // Don't auto-scroll, let user control the scrolling
+      // This prevents the rapid-fire scrolling issue
     }
   }, [currentSession.images.length]);
 
@@ -103,7 +101,7 @@ const MobileImageGrid: React.FC<MobileImageGridProps> = ({
           <div
             key={image.id}
             className={`grid-image-item ${selectedIndex === index ? 'selected' : ''}`}
-            style={{ '--appear-delay': `${index * 0.05}s` } as React.CSSProperties}
+            style={{ '--appear-delay': `${index * 0.1}s` } as React.CSSProperties}
             onClick={() => onImageClick(image)}
             onTouchEnd={(e) => {
               e.preventDefault();
@@ -141,7 +139,7 @@ const MobileImageGrid: React.FC<MobileImageGridProps> = ({
             <div
               key={`placeholder-${i}`}
               className="grid-image-placeholder"
-              style={{ '--appear-delay': `${(currentSession.images.length + i) * 0.05}s` } as React.CSSProperties}
+              style={{ '--appear-delay': `${(currentSession.images.length + i) * 0.1}s` } as React.CSSProperties}
             >
               <div className="placeholder-shimmer"></div>
             </div>
