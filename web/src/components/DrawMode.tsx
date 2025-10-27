@@ -15,6 +15,7 @@ type DrawModeProps = {
   }) => void;
   announce?: (msg: string) => void;
   defaultControlnetType?: string;
+  initialImage?: { url: string; prompt: string } | null;
 };
 
 /**
@@ -32,10 +33,11 @@ export default function DrawMode({
   onClose,
   onCreate,
   announce,
-  defaultControlnetType = 'scribble'
+  defaultControlnetType = 'scribble',
+  initialImage = null
 }: DrawModeProps) {
-  // Prompt
-  const [visionPrompt, setVisionPrompt] = useState('');
+  // Prompt - initialize with the prompt from initialImage if provided
+  const [visionPrompt, setVisionPrompt] = useState(initialImage?.prompt || '');
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
 
   // Tools
@@ -130,6 +132,58 @@ export default function DrawMode({
       window.removeEventListener('orientationchange', onResize);
     };
   }, [resizeCanvasToDisplaySize]);
+
+  // Load initial image if provided
+  useEffect(() => {
+    if (!initialImage?.url) return;
+
+    // Delay loading to ensure all functions and canvas are ready
+    const timer = setTimeout(() => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (!canvas || !ctx) return;
+
+        const cw = canvas.width;
+        const ch = canvas.height;
+        const iw = img.naturalWidth;
+        const ih = img.naturalHeight;
+
+        const scale = Math.min(cw / iw, ch / ih);
+        const dw = Math.round(iw * scale);
+        const dh = Math.round(ih * scale);
+        const dx = Math.round((cw - dw) / 2);
+        const dy = Math.round((ch - dh) / 2);
+
+        // Clear and draw the image
+        ctx.clearRect(0, 0, cw, ch);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, cw, ch);
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, dx, dy, dw, dh);
+
+        announce?.('Image loaded into canvas');
+
+        // Save initial state to undo stack
+        const imageData = ctx.getImageData(0, 0, cw, ch);
+        setUndoStack([imageData]);
+      };
+
+      img.onerror = () => {
+        console.error('Failed to load initial image');
+        announce?.('Failed to load image');
+      };
+
+      img.src = initialImage.url;
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [initialImage, announce]);
 
   const midpoint = (p1: { x: number; y: number }, p2: { x: number; y: number }) => ({
     x: (p1.x + p2.x) / 2,

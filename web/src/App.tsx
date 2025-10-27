@@ -73,6 +73,7 @@ export default function App() {
   const [originalSketch, setOriginalSketch] = useState<string | null>(null);
   const originalControlBlobRef = useRef<Blob | null>(null);
   const [controlnetType, setControlnetType] = useState('scribble');
+  const [imageToEdit, setImageToEdit] = useState<{ url: string; prompt: string } | null>(null);
 
   // Compare state (global so Spacebar works in main + hero)
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState(0);
@@ -509,6 +510,17 @@ export default function App() {
     setShowEditModal(true);
   };
 
+  const openDrawWithImage = () => {
+    if (!heroImage) return;
+    // Get the prompt from heroSession if it exists, otherwise from heroImage
+    const promptToUse = heroSession ? heroSession.basePrompt : heroImage.prompt;
+    setImageToEdit({ url: heroImage.url, prompt: promptToUse });
+    setIsDrawMode(true);
+    // Close hero mode when opening draw mode
+    setHeroImage(null);
+    setHeroSession(null);
+  };
+
   const handleImageClick = (image: TattooImage) => {
     if (!currentSession || image.isNSFW) return;
     const index = currentSession.images.findIndex(img => img.id === image.id);
@@ -604,6 +616,7 @@ export default function App() {
           onClose={closeHeroMode}
           onRefineClick={handleRefinementClick}
           onOpenEdit={openEditModal}
+          onOpenDrawWithImage={openDrawWithImage}
           onSelectOrbitImage={(image) => {
             if (image.isNSFW) return;
             const newIndex = (heroSession || currentSession)?.images.findIndex(img => img.id === image.id) ?? 0;
@@ -624,17 +637,22 @@ export default function App() {
       {isDrawMode && (
         <DrawMode
           isMobile={isMobile}
-          onClose={() => setIsDrawMode(false)}
+          onClose={() => {
+            setIsDrawMode(false);
+            setImageToEdit(null);
+          }}
           onCreate={async ({ prompt: p, style, controlnetType: cnType, controlBlob, sketchDataUrl }) => {
             setOriginalSketch(sketchDataUrl);
             originalControlBlobRef.current = controlBlob;
             setSelectedStyle('Simple Ink');
             setIsDrawMode(false);
+            setImageToEdit(null);
             setControlnetType(cnType);
             await startGenerationWithControlnet(p, style, controlBlob, sketchDataUrl, cnType);
           }}
           announce={announce}
           defaultControlnetType={controlnetType}
+          initialImage={imageToEdit}
         />
       )}
 

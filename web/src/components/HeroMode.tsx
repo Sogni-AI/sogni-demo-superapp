@@ -23,6 +23,7 @@ type HeroModeProps = {
   onClose: () => void;
   onRefineClick: (option: typeof HERO_REFINEMENT_OPTIONS[number]) => void;
   onOpenEdit: () => void;
+  onOpenDrawWithImage: () => void;
   onSelectOrbitImage: (image: TattooImage) => void;
 
   originalSketch?: string | null;
@@ -38,7 +39,7 @@ export default function HeroMode(props: HeroModeProps) {
     heroImage, heroIndex, currentSession, heroSession, selectedStyle, controlnetType, isMobile,
     showOriginalSketch, setShowOriginalSketch, currentHistoryIndex, setCurrentHistoryIndex,
     isInitiatingRefinement,
-    onNavigate, onClose, onRefineClick, onOpenEdit, onSelectOrbitImage,
+    onNavigate, onClose, onRefineClick, onOpenEdit, onOpenDrawWithImage, onSelectOrbitImage,
     originalSketch, getLastNonOriginalIndex, handleSpacebarToggle, autoFocus
   } = props;
 
@@ -517,6 +518,9 @@ export default function HeroMode(props: HeroModeProps) {
                 <button className="options-edit-btn" onClick={onOpenEdit} disabled={isInitiatingRefinement}>
                   Edit Prompt
                 </button>
+                <button className="options-edit-btn" onClick={onOpenDrawWithImage} disabled={isInitiatingRefinement}>
+                  Edit Image
+                </button>
               </div>
             </div>
             <div className="mobile-options-scroll">
@@ -628,6 +632,13 @@ export default function HeroMode(props: HeroModeProps) {
                   style={{ fontSize: '0.75rem', padding: '6px 12px' }}
                 >
                   Edit Prompt
+                </button>
+                <button
+                  className="options-edit-btn"
+                  onClick={onOpenDrawWithImage}
+                  style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                >
+                  Edit Image
                 </button>
               </div>
             </div>
