@@ -485,6 +485,7 @@ export default function MobileStyles() {
       animation-delay: var(--appear-delay, 0s);
       transform: scale(0.95);
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      height: max-content;
     }
 
     @keyframes gridItemAppear {
