@@ -362,9 +362,9 @@ export default function MobileStyles() {
         grid-template-columns: 1fr auto auto 1fr auto auto;
       }
 
-      /* Tablets can show 3 columns */
+      /* Tablets also use 2-up layout for consistency */
       .mobile-image-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(2, 1fr);
         gap: 14px;
         padding: calc(180px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom)) 16px;
       }
@@ -374,11 +374,14 @@ export default function MobileStyles() {
       }
     }
 
-    /* Larger tablets can show 4 columns */
+    /* Larger tablets also maintain 2-up layout */
     @media (min-width: 900px) {
       .mobile-image-grid {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(2, 1fr);
         gap: 16px;
+        /* Make items slightly larger on tablets */
+        max-width: 700px;
+        margin: 0 auto;
       }
     }
 
@@ -758,12 +761,12 @@ export default function MobileStyles() {
       backdrop-filter: blur(10px);
     }
 
-    /* Responsive adjustments */
+    /* Responsive adjustments - Mobile devices always show 2-up layout */
     @media (max-width: 768px) {
       .mobile-image-grid {
-        grid-template-columns: repeat(4, 1fr);
-        gap: 6px;
-        padding: calc(170px + env(safe-area-inset-top)) 6px calc(20px + env(safe-area-inset-bottom)) 6px;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        padding: calc(170px + env(safe-area-inset-top)) 8px calc(20px + env(safe-area-inset-bottom)) 8px;
       }
 
       .mobile-image-grid.has-images {
@@ -773,13 +776,20 @@ export default function MobileStyles() {
       .mobile-progress-bar {
         top: calc(145px + env(safe-area-inset-top));
       }
+
+      /* Make images larger in 2-up layout */
+      .mobile-grid-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
     }
 
     @media (max-width: 480px) {
       .mobile-image-grid {
-        grid-template-columns: repeat(3, 1fr);
-        gap: 4px;
-        padding: calc(165px + env(safe-area-inset-top)) 4px calc(20px + env(safe-area-inset-bottom)) 4px;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+        padding: calc(165px + env(safe-area-inset-top)) 6px calc(20px + env(safe-area-inset-bottom)) 6px;
       }
 
       .mobile-image-grid.has-images {
@@ -794,6 +804,8 @@ export default function MobileStyles() {
     @media (max-width: 360px) {
       .mobile-image-grid {
         grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+        padding: calc(165px + env(safe-area-inset-top)) 4px calc(20px + env(safe-area-inset-bottom)) 4px;
       }
     }
 
