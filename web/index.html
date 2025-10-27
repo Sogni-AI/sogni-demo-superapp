@@ -1635,7 +1635,6 @@
         position: relative;
         aspect-ratio: 1;
         width: 100%;
-        height: auto;
         border-radius: 10px;
         overflow: hidden;
         background: rgba(255, 255, 255, 0.05);
@@ -1645,6 +1644,7 @@
         animation: optionFadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
         animation-delay: var(--appear-delay, 0s);
         display: block;
+        height: max-content;
       }
 
       .mobile-result-item:active {
