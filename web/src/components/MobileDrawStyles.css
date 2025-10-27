@@ -172,7 +172,7 @@
   top: 48px;
   left: 0;
   right: 0;
-  bottom: 60px;
+  bottom: 140px; /* Increased to accommodate multi-row toolbar */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -183,8 +183,8 @@
 .mobile-drawing-canvas {
   width: calc(100vw - 16px);
   height: calc(100vw - 16px);
-  max-width: calc(100vh - 120px);
-  max-height: calc(100vh - 120px);
+  max-width: calc(100vh - 200px); /* Adjusted for multi-row toolbar */
+  max-height: calc(100vh - 200px); /* Adjusted for multi-row toolbar */
   background: white;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
@@ -247,7 +247,7 @@
 .mobile-fab-container {
   position: fixed;
   right: 12px;
-  bottom: 72px;
+  bottom: 152px; /* Adjusted for multi-row toolbar */
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -301,71 +301,116 @@
   transform: scale(0.95);
 }
 
-/* Bottom Toolbar */
-.mobile-bottom-toolbar {
+/* Multi-Row Bottom Toolbar */
+.mobile-bottom-toolbar-multi {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 60px;
   background: rgba(26, 26, 26, 0.98);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(20px);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-  gap: 4px;
   z-index: 100;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  padding: 4px 6px 8px;
 }
 
-.toolbar-section {
+.toolbar-row {
   display: flex;
   align-items: center;
   gap: 4px;
+  padding: 3px 0;
+  min-height: 44px;
+}
+
+.toolbar-row.compact {
+  min-height: 36px;
+  padding: 2px 0;
+}
+
+.toolbar-spacer {
+  flex: 1;
+  max-width: 12px;
 }
 
 .toolbar-btn {
-  min-width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  background: transparent;
-  border: none;
+  min-width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 1.2rem;
+  transition: all 0.15s ease;
+  font-size: 1.3rem;
+  flex-shrink: 0;
 }
 
 .toolbar-btn:active {
-  background: rgba(255, 255, 255, 0.1);
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .toolbar-btn.active {
-  background: rgba(255, 107, 53, 0.2);
-  color: #ff6b35;
+  background: rgba(255, 107, 53, 0.25);
+  border-color: rgba(255, 107, 53, 0.5);
+  color: #ff8855;
+  box-shadow: 0 0 8px rgba(255, 107, 53, 0.2);
 }
 
-.toolbar-divider {
-  width: 1px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.1);
-  margin: 0 4px;
+.toolbar-btn.danger {
+  color: #ff6b6b;
 }
 
-.brush-size-control {
+.toolbar-btn.danger:active {
+  background: rgba(255, 107, 107, 0.15);
+}
+
+.toolbar-btn.mini {
+  min-width: 36px;
+  height: 34px;
+  font-size: 1rem;
+  border-radius: 8px;
+}
+
+.toolbar-btn.color-btn {
+  position: relative;
+}
+
+.toolbar-btn.color-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  background: #ff6b35;
+  border-radius: 50%;
+}
+
+/* Brush Size Control for Multi-Row */
+.brush-size-control-multi {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  flex: 1;
+  max-width: 140px;
+}
+
+.size-icon {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8rem;
 }
 
 .mobile-size-slider {
-  width: 80px;
+  flex: 1;
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
@@ -377,113 +422,58 @@
 .mobile-size-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: #ff6b35;
+  background: linear-gradient(135deg, #ff8855, #ff6b35);
   cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .size-label {
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.75rem;
-  min-width: 24px;
+  min-width: 20px;
+  text-align: right;
 }
 
-.more-btn {
-  margin-left: auto;
-}
-
-/* Sliding Options Panel */
-.mobile-options-panel {
-  position: fixed;
-  bottom: -300px;
-  left: 0;
-  right: 0;
-  height: 300px;
-  background: rgba(26, 26, 26, 0.98);
-  backdrop-filter: blur(10px);
-  border-radius: 20px 20px 0 0;
-  z-index: 95;
-  transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
-}
-
-.mobile-options-panel.open {
-  bottom: 60px;
-}
-
-.options-handle {
-  width: 40px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
-  margin: 12px auto;
-}
-
-.options-content {
-  padding: 0 20px 20px;
-  overflow-y: auto;
-  max-height: 250px;
-}
-
-.option-group {
-  margin-bottom: 20px;
-}
-
-.option-group label {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 8px;
-  display: block;
-}
-
-.option-buttons {
+/* ControlNet Compact Selector */
+.controlnet-compact {
   display: flex;
-  gap: 8px;
-}
-
-.option-btn {
+  align-items: center;
+  gap: 6px;
   flex: 1;
-  height: 36px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 4px 8px;
+}
+
+.mini-label {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.mobile-controlnet-inline {
+  flex: 1;
+  background: transparent;
+  border: none;
   color: white;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
+  outline: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  padding: 2px 4px;
 }
 
-.option-btn:active {
-  transform: scale(0.95);
-}
-
-.option-btn.active {
-  background: rgba(255, 107, 53, 0.2);
-  border-color: #ff6b35;
-  color: #ff6b35;
-}
-
-.mobile-controlnet-select {
-  width: 100%;
-  height: 36px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: white;
-  padding: 0 12px;
-  font-size: 0.9rem;
-  cursor: pointer;
-}
-
-.mobile-controlnet-select option {
+.mobile-controlnet-inline option {
   background: #1a1a1a;
   color: white;
 }
+
 
 /* Landscape Mode Adjustments */
 @media (orientation: landscape) and (max-height: 600px) {
@@ -493,20 +483,40 @@
 
   .mobile-canvas-area {
     top: 40px;
-    bottom: 50px;
+    bottom: 120px; /* Adjusted for multi-row toolbar in landscape */
   }
 
-  .mobile-bottom-toolbar {
-    height: 50px;
+  .mobile-bottom-toolbar-multi {
+    padding: 2px 6px 4px;
+  }
+
+  .toolbar-row {
+    min-height: 38px;
+    padding: 2px 0;
+  }
+
+  .toolbar-row.compact {
+    min-height: 32px;
+  }
+
+  .toolbar-btn {
+    min-width: 38px;
+    height: 38px;
+    font-size: 1.1rem;
+  }
+
+  .toolbar-btn.mini {
+    min-width: 32px;
+    height: 30px;
   }
 
   .mobile-drawing-canvas {
-    height: calc(100vh - 100px);
-    width: calc(100vh - 100px);
+    height: calc(100vh - 170px);
+    width: calc(100vh - 170px);
   }
 
   .mobile-fab-container {
-    bottom: 62px;
+    bottom: 132px;
     flex-direction: row;
   }
 }
@@ -524,6 +534,12 @@
     font-size: 1rem;
   }
 
+  .toolbar-btn.mini {
+    min-width: 32px;
+    height: 30px;
+    font-size: 0.9rem;
+  }
+
   .mobile-fab-primary {
     width: 48px;
     height: 48px;
@@ -534,8 +550,25 @@
     height: 40px;
   }
 
-  .brush-size-control {
-    display: none; /* Hide on very small screens, access via options panel */
+  .brush-size-control-multi {
+    max-width: 100px;
+    padding: 4px 6px;
+  }
+
+  .mobile-size-slider {
+    width: 50px;
+  }
+
+  .controlnet-compact {
+    padding: 2px 6px;
+  }
+
+  .mini-label {
+    font-size: 0.65rem;
+  }
+
+  .mobile-controlnet-inline {
+    font-size: 0.8rem;
   }
 }
 

@@ -1203,60 +1203,74 @@ export default function DrawMode({
             </button>
           </div>
 
-          {/* Bottom Toolbar */}
-          <div className="mobile-bottom-toolbar">
-            {/* Primary Tools */}
-            <div className="toolbar-section">
+          {/* Multi-Row Bottom Toolbar */}
+          <div className="mobile-bottom-toolbar-multi">
+            {/* Row 1: Drawing Tools */}
+            <div className="toolbar-row">
               <button
                 className={`toolbar-btn ${drawTool === 'brush' ? 'active' : ''}`}
                 onClick={() => setDrawTool('brush')}
+                title="Brush"
               >
                 🖌️
               </button>
               <button
                 className={`toolbar-btn ${drawTool === 'calligraphy' ? 'active' : ''}`}
                 onClick={() => setDrawTool('calligraphy')}
+                title="Calligraphy"
               >
                 🖋️
               </button>
               <button
                 className={`toolbar-btn ${drawTool === 'square' ? 'active' : ''}`}
                 onClick={() => setDrawTool('square')}
+                title="Rectangle"
               >
                 ⬛
               </button>
               <button
                 className={`toolbar-btn ${drawTool === 'circle' ? 'active' : ''}`}
                 onClick={() => setDrawTool('circle')}
+                title="Circle"
               >
                 ⭕
               </button>
               <button
                 className={`toolbar-btn ${drawTool === 'eraser' ? 'active' : ''}`}
                 onClick={() => setDrawTool('eraser')}
+                title="Eraser"
               >
                 🧽
               </button>
+
+              {/* Actions */}
+              <div className="toolbar-spacer" />
+              <button className="toolbar-btn" onClick={undo} title="Undo">↶</button>
+              <button className="toolbar-btn" onClick={redo} title="Redo">↷</button>
+              <button className="toolbar-btn danger" onClick={clearCanvas} title="Clear">🗑️</button>
             </div>
 
-            {/* Divider */}
-            <div className="toolbar-divider" />
-
-            {/* Color & Size */}
-            <div className="toolbar-section">
+            {/* Row 2: Color, Size, and Effects */}
+            <div className="toolbar-row">
+              {/* Color selection */}
               <button
-                className={`toolbar-btn ${drawColor === '#000000' ? 'active' : ''}`}
+                className={`toolbar-btn color-btn ${drawColor === '#000000' ? 'active' : ''}`}
                 onClick={() => setDrawColor('#000000')}
+                title="Black"
               >
                 ⚫
               </button>
               <button
-                className={`toolbar-btn ${drawColor === '#ffffff' ? 'active' : ''}`}
+                className={`toolbar-btn color-btn ${drawColor === '#ffffff' ? 'active' : ''}`}
                 onClick={() => setDrawColor('#ffffff')}
+                title="White"
               >
                 ⚪
               </button>
-              <div className="brush-size-control">
+
+              {/* Brush size slider */}
+              <div className="brush-size-control-multi">
+                <span className="size-icon">◉</span>
                 <input
                   type="range"
                   min="2"
@@ -1264,100 +1278,70 @@ export default function DrawMode({
                   value={brushSize}
                   onChange={(e) => setBrushSize(Number(e.target.value))}
                   className="mobile-size-slider"
+                  aria-label="Brush size"
                 />
                 <span className="size-label">{brushSize}</span>
               </div>
+
+              {/* Symmetry and effects */}
+              <div className="toolbar-spacer" />
+              <button
+                className={`toolbar-btn ${symmetryH ? 'active' : ''}`}
+                onClick={() => setSymmetryH(v => !v)}
+                title="H-Symmetry"
+              >
+                ⇄
+              </button>
+              <button
+                className={`toolbar-btn ${symmetryV ? 'active' : ''}`}
+                onClick={() => setSymmetryV(v => !v)}
+                title="V-Symmetry"
+              >
+                ⇅
+              </button>
+              <button
+                className={`toolbar-btn ${showGrid ? 'active' : ''}`}
+                onClick={() => setShowGrid(v => !v)}
+                title="Grid"
+              >
+                #
+              </button>
             </div>
 
-            {/* Divider */}
-            <div className="toolbar-divider" />
-
-            {/* Actions */}
-            <div className="toolbar-section">
-              <button className="toolbar-btn" onClick={undo}>↶</button>
-              <button className="toolbar-btn" onClick={redo}>↷</button>
-              <button className="toolbar-btn" onClick={clearCanvas}>🗑️</button>
-            </div>
-
-            {/* More Options */}
-            <button
-              className="toolbar-btn more-btn"
-              onClick={() => {
-                // Toggle advanced options panel
-                const panel = document.querySelector('.mobile-options-panel');
-                if (panel) {
-                  panel.classList.toggle('open');
-                }
-              }}
-            >
-              ⋮
-            </button>
-          </div>
-
-          {/* Sliding Options Panel */}
-          <div className="mobile-options-panel">
-            <div className="options-handle"></div>
-            <div className="options-content">
-              <div className="option-group">
-                <label>Symmetry</label>
-                <div className="option-buttons">
-                  <button
-                    className={`option-btn ${symmetryH ? 'active' : ''}`}
-                    onClick={() => setSymmetryH(v => !v)}
-                  >
-                    H
-                  </button>
-                  <button
-                    className={`option-btn ${symmetryV ? 'active' : ''}`}
-                    onClick={() => setSymmetryV(v => !v)}
-                  >
-                    V
-                  </button>
-                </div>
-              </div>
-
-              <div className="option-group">
-                <label>Guides</label>
-                <div className="option-buttons">
-                  <button
-                    className={`option-btn ${showGrid ? 'active' : ''}`}
-                    onClick={() => setShowGrid(v => !v)}
-                  >
-                    Grid
-                  </button>
-                  <button
-                    className={`option-btn ${smoothBrush ? 'active' : ''}`}
-                    onClick={() => setSmoothBrush(v => !v)}
-                  >
-                    Smooth
-                  </button>
-                </div>
-              </div>
-
-              <div className="option-group">
-                <label>ControlNet</label>
+            {/* Row 3: Advanced Options */}
+            <div className="toolbar-row compact">
+              {/* ControlNet selector */}
+              <div className="controlnet-compact">
+                <label className="mini-label">AI Mode:</label>
                 <select
                   value={controlnetType}
                   onChange={(e) => setControlnetType(e.target.value)}
-                  className="mobile-controlnet-select"
+                  className="mobile-controlnet-inline"
                 >
-                  <option value="scribble">scribble</option>
-                  <option value="canny">canny</option>
-                  <option value="inpaint">inpaint</option>
-                  <option value="instrp2p">instrp2p</option>
-                  <option value="lineart">lineart</option>
-                  <option value="lineartanime">lineartanime</option>
-                  <option value="shuffle">shuffle</option>
-                  <option value="softedge">softedge</option>
-                  <option value="tile">tile</option>
+                  <option value="scribble">Scribble</option>
+                  <option value="canny">Canny</option>
+                  <option value="lineart">Line Art</option>
+                  <option value="softedge">Soft Edge</option>
+                  <option value="inpaint">Inpaint</option>
+                  <option value="tile">Tile</option>
                 </select>
               </div>
 
-              <div className="option-group">
-                <button className="option-btn" onClick={invertCanvas}>
-                  Invert Colors
-                </button>
-              </div>
+              {/* Additional options */}
+              <button
+                className={`toolbar-btn mini ${smoothBrush ? 'active' : ''}`}
+                onClick={() => setSmoothBrush(v => !v)}
+                title="Smooth"
+              >
+                ✨
+              </button>
+              <button
+                className="toolbar-btn mini"
+                onClick={invertCanvas}
+                title="Invert"
+              >
+                ⚡
+              </button>
             </div>
           </div>
         </div>
