@@ -90,13 +90,6 @@ const MobileImageGrid: React.FC<MobileImageGridProps> = ({
   if (viewMode === 'grid') {
     return (
       <div className={`mobile-image-grid ${isMobile ? 'is-mobile' : ''} ${currentSession.images.length > 0 ? 'has-images' : ''}`}>
-        {/* Progress indicator for mobile */}
-        {currentSession.generating && currentSession.progress > 0 && (
-          <div className="mobile-progress-bar">
-            <div className="progress-bar-fill" style={{ width: `${currentSession.progress * 100}%` }}></div>
-            <span className="progress-text">{Math.round(currentSession.progress * 100)}% Complete</span>
-          </div>
-        )}
         {currentSession.images.map((image, index) => (
           <div
             key={image.id}
@@ -133,18 +126,6 @@ const MobileImageGrid: React.FC<MobileImageGridProps> = ({
           </div>
         ))}
 
-        {/* Empty placeholders for loading state */}
-        {currentSession.generating && currentSession.images.length < 16 && (
-          Array.from({ length: 16 - currentSession.images.length }, (_, i) => (
-            <div
-              key={`placeholder-${i}`}
-              className="grid-image-placeholder"
-              style={{ '--appear-delay': `${(currentSession.images.length + i) * 0.1}s` } as React.CSSProperties}
-            >
-              <div className="placeholder-shimmer"></div>
-            </div>
-          ))
-        )}
       </div>
     );
   }
@@ -183,12 +164,6 @@ const MobileImageGrid: React.FC<MobileImageGridProps> = ({
         </div>
       ))}
 
-      {currentSession.generating && currentSession.images.length < 16 && (
-        <div className="stack-loading-card">
-          <div className="stack-loading-spinner"></div>
-          <div className="stack-loading-text">Generating more designs...</div>
-        </div>
-      )}
     </div>
   );
 };

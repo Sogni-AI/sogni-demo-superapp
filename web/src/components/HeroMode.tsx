@@ -513,7 +513,7 @@ export default function HeroMode(props: HeroModeProps) {
                   disabled={isInitiatingRefinement}
                   aria-label="Download image"
                 >
-                  ⬇ Download
+                  Download
                 </button>
                 <button className="options-edit-btn" onClick={onOpenEdit} disabled={isInitiatingRefinement}>
                   Edit Prompt
@@ -624,7 +624,7 @@ export default function HeroMode(props: HeroModeProps) {
                   aria-label="Download image"
                   style={{ fontSize: '0.75rem', padding: '6px 12px' }}
                 >
-                  ⬇ Download
+                  Download
                 </button>
                 <button
                   className="options-edit-btn"

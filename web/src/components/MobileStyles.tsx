@@ -411,50 +411,6 @@ export default function MobileStyles() {
       padding-top: calc(80px + env(safe-area-inset-top));
     }
 
-    /* Mobile progress bar */
-    .mobile-progress-bar {
-      position: fixed;
-      top: calc(150px + env(safe-area-inset-top));
-      left: 16px;
-      right: 16px;
-      height: 36px;
-      background: rgba(0, 0, 0, 0.8);
-      border-radius: 20px;
-      overflow: hidden;
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 107, 53, 0.3);
-      transition: top 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    /* When header is collapsed, move progress bar up */
-    .mobile-image-grid.has-images ~ .mobile-progress-bar,
-    .mobile-image-grid.has-images .mobile-progress-bar {
-      top: calc(20px + env(safe-area-inset-top));
-    }
-
-    .progress-bar-fill {
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      background: linear-gradient(90deg, var(--brand) 0%, #ff8855 100%);
-      border-radius: 20px;
-      transition: width 0.5s ease-out;
-      box-shadow: 0 0 10px rgba(255, 107, 53, 0.5);
-    }
-
-    .progress-text {
-      position: relative;
-      color: white;
-      font-weight: 600;
-      font-size: 0.85rem;
-      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-      z-index: 1;
-    }
 
     .mobile-image-grid.is-mobile {
       animation: mobileGridSlideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
@@ -553,36 +509,6 @@ export default function MobileStyles() {
       text-align: center;
     }
 
-    .grid-image-placeholder {
-      position: relative;
-      aspect-ratio: 1;
-      border-radius: 16px;
-      overflow: hidden;
-      background: rgba(255, 255, 255, 0.03);
-      border: 2px solid rgba(255, 255, 255, 0.08);
-      opacity: 0;
-      animation: gridItemAppear 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-      animation-delay: var(--appear-delay, 0s);
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-
-    .placeholder-shimmer {
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(
-        90deg,
-        rgba(255, 255, 255, 0) 0%,
-        rgba(255, 255, 255, 0.05) 50%,
-        rgba(255, 255, 255, 0) 100%
-      );
-      background-size: 200% 100%;
-      animation: shimmer 2s infinite;
-    }
-
-    @keyframes shimmer {
-      0% { background-position: -200% 0; }
-      100% { background-position: 200% 0; }
-    }
 
     /* Stack View for Very Small Screens */
     .mobile-image-stack {
@@ -663,31 +589,6 @@ export default function MobileStyles() {
       transform: scale(0.95);
     }
 
-    .stack-loading-card {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 40px;
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 16px;
-      border: 2px dashed rgba(255, 255, 255, 0.2);
-    }
-
-    .stack-loading-spinner {
-      width: 32px;
-      height: 32px;
-      border: 3px solid rgba(255, 255, 255, 0.2);
-      border-top-color: var(--brand);
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 16px;
-    }
-
-    .stack-loading-text {
-      color: rgba(255, 255, 255, 0.6);
-      font-size: 0.9rem;
-    }
 
     /* NSFW placeholders */
     .nsfw-placeholder, .nsfw-placeholder-stack {
@@ -774,9 +675,6 @@ export default function MobileStyles() {
         padding-top: calc(75px + env(safe-area-inset-top));
       }
 
-      .mobile-progress-bar {
-        top: calc(145px + env(safe-area-inset-top));
-      }
 
       /* Make images larger in 2-up layout */
       .mobile-grid-item img {
@@ -797,9 +695,6 @@ export default function MobileStyles() {
         padding-top: calc(70px + env(safe-area-inset-top));
       }
 
-      .mobile-progress-bar {
-        top: calc(140px + env(safe-area-inset-top));
-      }
     }
 
     @media (max-width: 360px) {
