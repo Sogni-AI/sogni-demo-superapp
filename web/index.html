@@ -1948,6 +1948,73 @@
         /* Show mobile grid */
         .mobile-image-grid {
           display: grid !important;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 16px;
+          padding: 20px;
+          width: 100%;
+          box-sizing: border-box;
+          overflow-y: auto;
+          max-height: calc(100vh - 200px);
+        }
+
+        /* Grid items should not overlap */
+        .mobile-image-grid .grid-image-item {
+          position: relative;
+          aspect-ratio: 1;
+          width: 100%;
+          height: auto;
+          border-radius: 12px;
+          overflow: hidden;
+          background: rgba(30, 30, 30, 0.5);
+          border: 2px solid rgba(255, 255, 255, 0.1);
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .mobile-image-grid .grid-image-item:active {
+          transform: scale(0.95);
+        }
+
+        .mobile-image-grid .grid-image {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+
+        .mobile-image-grid .image-number {
+          position: absolute;
+          bottom: 8px;
+          right: 8px;
+          background: rgba(0, 0, 0, 0.8);
+          color: white;
+          font-size: 0.75rem;
+          font-weight: 600;
+          padding: 4px 8px;
+          border-radius: 6px;
+          backdrop-filter: blur(10px);
+        }
+
+        .mobile-image-grid .nsfw-placeholder {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          height: 100%;
+          background: rgba(50, 50, 50, 0.9);
+          color: rgba(255, 255, 255, 0.5);
+        }
+
+        .mobile-image-grid .grid-image-placeholder {
+          position: relative;
+          aspect-ratio: 1;
+          width: 100%;
+          height: auto;
+          border-radius: 12px;
+          overflow: hidden;
+          background: rgba(40, 40, 40, 0.5);
+          border: 2px solid rgba(255, 255, 255, 0.05);
         }
 
         /* Floating controls for mobile */
