@@ -385,11 +385,8 @@ export default function DrawMode({
     if (!ctx) return;
     try {
       const snap = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      console.log('[DrawMode] pushUndoSnapshot called, clearing redo stack');
-      console.trace('[DrawMode] pushUndoSnapshot stack trace');
       setUndoStack(prev => {
         const next = [...prev, snap];
-        console.log('[DrawMode] Undo stack length after push:', next.length);
         return next.length > HISTORY_LIMIT ? next.slice(next.length - HISTORY_LIMIT) : next;
       });
       setRedoStack([]);
@@ -397,21 +394,16 @@ export default function DrawMode({
   }, []);
 
   const applyImageData = (img: ImageData | null) => {
-    console.log('[DrawMode] applyImageData called', img ? `${img.width}x${img.height}` : 'null');
     const canvas = canvasRef.current;
     if (!canvas || !img) {
-      console.log('[DrawMode] applyImageData - no canvas or no img, returning');
       return;
     }
     const ctx = getCanvas2DContext(canvas);
     if (!ctx) {
-      console.log('[DrawMode] applyImageData - no context, returning');
       return;
     }
-    console.log('[DrawMode] applyImageData - putting image data to canvas');
     ctx.putImageData(img, 0, 0);
     setDrips([]);
-    console.log('[DrawMode] applyImageData - complete');
   };
 
   // ===== Preprocess pipeline =====
@@ -476,11 +468,9 @@ export default function DrawMode({
     const ctx = getCanvas2DContext(canvas);
     if (!ctx) return;
 
-    console.log('[DrawMode] Undo called');
 
     // Check if there's anything to undo
     if (undoStack.length === 0) {
-      console.log('[DrawMode] Undo stack is empty');
       return;
     }
 
@@ -489,8 +479,6 @@ export default function DrawMode({
       const current = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const last = undoStack[undoStack.length - 1];
 
-      console.log('[DrawMode] Undo stack length:', undoStack.length);
-      console.log('[DrawMode] Moving to redo stack');
 
       // Update both stacks
       setRedoStack(prev => [...prev, current].slice(-HISTORY_LIMIT));
@@ -499,7 +487,6 @@ export default function DrawMode({
       // Apply the restored state
       applyImageData(last);
 
-      console.log('[DrawMode] Undo complete');
     } catch (err) {
       console.error('[DrawMode] Undo failed:', err);
     }
@@ -512,11 +499,9 @@ export default function DrawMode({
     const ctx = getCanvas2DContext(canvas);
     if (!ctx) return;
 
-    console.log('[DrawMode] Redo called');
 
     // Check if there's anything to redo
     if (redoStack.length === 0) {
-      console.log('[DrawMode] Redo stack is empty, cannot redo');
       return;
     }
 
@@ -525,8 +510,6 @@ export default function DrawMode({
       const current = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const last = redoStack[redoStack.length - 1];
 
-      console.log('[DrawMode] Redo stack length:', redoStack.length);
-      console.log('[DrawMode] Moving to undo stack');
 
       // Update both stacks
       setUndoStack(prev => [...prev, current].slice(-HISTORY_LIMIT));
@@ -535,7 +518,6 @@ export default function DrawMode({
       // Apply the restored state
       applyImageData(last);
 
-      console.log('[DrawMode] Redo complete');
     } catch (err) {
       console.error('[DrawMode] Redo failed:', err);
     }
@@ -1064,7 +1046,6 @@ export default function DrawMode({
 
   const applyInpaintResult = useCallback(
     async (resultBlob: Blob) => {
-      console.log('[DrawMode] applyInpaintResult called with blob:', resultBlob.size, 'bytes');
       const canvas = canvasRef.current;
       if (!canvas) throw new Error('Canvas not ready');
       const ctx = getCanvas2DContext(canvas);
@@ -1072,13 +1053,11 @@ export default function DrawMode({
 
       const drawFromImageElement = () =>
         new Promise<void>((resolve, reject) => {
-          console.log('[DrawMode] Using Image() fallback to draw inpaint result');
           const url = URL.createObjectURL(resultBlob);
           const img = new Image();
           img.decoding = 'async';
           img.onload = () => {
             try {
-              console.log('[DrawMode] Image loaded, applying to canvas');
               pushUndoSnapshot();
               ctx.clearRect(0, 0, canvas.width, canvas.height);
               ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -1099,7 +1078,6 @@ export default function DrawMode({
       let applied = false;
       if (typeof window !== 'undefined' && 'createImageBitmap' in window && typeof window.createImageBitmap === 'function') {
         try {
-          console.log('[DrawMode] Using createImageBitmap to draw inpaint result');
           const bitmap = await createImageBitmap(resultBlob);
           pushUndoSnapshot();
           ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1109,7 +1087,6 @@ export default function DrawMode({
             bitmap.close();
           }
           applied = true;
-          console.log('[DrawMode] Successfully applied inpaint result via createImageBitmap');
         } catch (err) {
           console.warn('[DrawMode] createImageBitmap failed, falling back to Image()', err);
         }
@@ -1118,7 +1095,6 @@ export default function DrawMode({
       if (!applied) {
         await drawFromImageElement();
       }
-      console.log('[DrawMode] applyInpaintResult completed');
     },
     [pushUndoSnapshot]
   );
@@ -1147,7 +1123,6 @@ export default function DrawMode({
         }
         if (!data) return;
 
-        console.log('[DrawMode] Inpaint SSE event:', data.type, data);
 
         if (data.type === 'jobCompleted') {
           if (data.job?.isNSFW) {
@@ -1160,7 +1135,6 @@ export default function DrawMode({
             return;
           }
 
-          console.log('[DrawMode] Fetching inpaint result from:', resultPath);
           settled = true;
           try {
             es.close();
@@ -1168,13 +1142,11 @@ export default function DrawMode({
 
           try {
             const response = await fetch(resolveApiUrl(resultPath));
-            console.log('[DrawMode] Fetch response status:', response.status, response.ok);
             if (!response.ok) {
               reject(new Error(`Failed to download inpaint result (${response.status})`));
               return;
             }
             const blob = await response.blob();
-            console.log('[DrawMode] Got inpaint blob:', blob.size, 'bytes');
             resolve(blob);
           } catch (err) {
             console.error('[DrawMode] Fetch error:', err);
@@ -1190,7 +1162,6 @@ export default function DrawMode({
 
         // Ignore 'completed' event - we already got the result from 'jobCompleted'
         if (data.type === 'completed') {
-          console.log('[DrawMode] Ignoring completed event (already handled jobCompleted)');
           return;
         }
       };
@@ -1260,12 +1231,10 @@ export default function DrawMode({
 
       try {
         announce?.('Submitting selection for inpainting…');
-        console.log('[DrawMode] Exporting lasso selection...');
         const { blob } = await exportLassoSelection(finalLasso, 'image/png');
         if (!blob) {
           throw new Error('Could not prepare the inpaint selection');
         }
-        console.log('[DrawMode] Lasso selection exported:', blob.size, 'bytes');
 
         const form = new FormData();
         form.append('prompt', trimmedPrompt);
@@ -1275,7 +1244,6 @@ export default function DrawMode({
         form.append('numberOfImages', '1');
         form.append('controlImage', blob, 'lasso-selection.png');
 
-        console.log('[DrawMode] Submitting to /api/generate-controlnet...');
         const response = await fetch(resolveApiUrl('/api/generate-controlnet'), {
           method: 'POST',
           body: form
@@ -1300,26 +1268,18 @@ export default function DrawMode({
         if (!projectId) {
           throw new Error('Missing project reference for inpainting');
         }
-        console.log('[DrawMode] Got projectId:', projectId);
 
-        console.log('[DrawMode] Waiting for inpaint result...');
         const resultBlob = await waitForInpaintResult(String(projectId));
-        console.log('[DrawMode] Got result blob, checking if mounted...');
         if (!isMountedRef.current) {
-          console.log('[DrawMode] Component unmounted, aborting');
           return;
         }
-        console.log('[DrawMode] Applying inpaint result to canvas...');
         await applyInpaintResult(resultBlob);
-        console.log('[DrawMode] Inpaint result applied successfully');
 
         if (isMountedRef.current) {
-          console.log('[DrawMode] Cleaning up lasso selection...');
           setVisionPrompt(trimmedPrompt);
           cancelLassoSelection();
         }
         announce?.('Selection updated');
-        console.log('[DrawMode] handleConfirmLasso completed successfully');
       } catch (err) {
         console.error(err);
         const message = err instanceof Error ? err.message : 'Failed to inpaint selection';
