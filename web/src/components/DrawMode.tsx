@@ -1,5 +1,5 @@
 // web/src/components/DrawMode.tsx
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HISTORY_LIMIT, MAX_DPR } from '../constants';
 import './MobileDrawStyles.css';
 import PreprocessModal from './PreprocessModal';
@@ -27,6 +27,15 @@ type PendingImport = {
   baseScale: number;
   centerX: number;
   centerY: number;
+};
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
+const resolveApiUrl = (path: string) => {
+  if (!path) return API_BASE;
+  if (/^https?:\/\//i.test(path)) return path;
+  if (!API_BASE) return path;
+  return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
 };
 
 const getCanvas2DContext = (
@@ -77,7 +86,7 @@ export default function DrawMode({
   // Tools
   const [brushSize, setBrushSize] = useState(8);
   const [drawColor, setDrawColor] = useState('#000000');
-  const [drawTool, setDrawTool] = useState<'brush' | 'square' | 'circle' | 'calligraphy' | 'eraser'>('brush');
+  const [drawTool, setDrawTool] = useState<'brush' | 'square' | 'circle' | 'calligraphy' | 'eraser' | 'lasso'>('brush');
   const [smoothBrush, setSmoothBrush] = useState(false);
   const [symmetryH, setSymmetryH] = useState(false);
   const [symmetryV, setSymmetryV] = useState(false);
@@ -86,6 +95,12 @@ export default function DrawMode({
 
   // Canvas state
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [canvasDimensions, setCanvasDimensions] = useState({
+    pixelWidth: 1024,
+    pixelHeight: 1024,
+    cssWidth: 1024,
+    cssHeight: 1024
+  });
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
   const [baseImageData, setBaseImageData] = useState<ImageData | null>(null);
@@ -106,6 +121,14 @@ export default function DrawMode({
   >([]);
   const dripCounter = useRef(0);
 
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const pendingImportRef = useRef<PendingImport | null>(null);
   const importBaseImageRef = useRef<ImageData | null>(null);
@@ -124,6 +147,14 @@ export default function DrawMode({
   const lastPressureRef = useRef<number>(1);
   const activePointerIdRef = useRef<number | null>(null);
 
+  // Lasso selection
+  const [lassoPoints, setLassoPoints] = useState<Array<{ x: number; y: number }>>([]);
+  const lassoPointsRef = useRef<Array<{ x: number; y: number }>>([]);
+  const [finalLasso, setFinalLasso] = useState<Array<{ x: number; y: number }> | null>(null);
+  const [showLassoPrompt, setShowLassoPrompt] = useState(false);
+  const [lassoPrompt, setLassoPrompt] = useState('');
+  const [isSubmittingLasso, setIsSubmittingLasso] = useState(false);
+
   // ===== Preprocess modal state =====
   const [showPreprocess, setShowPreprocess] = useState(false);
   const lastLoadWasUserUploadRef = useRef(false); // true only for file/drag/paste loads
@@ -135,12 +166,33 @@ export default function DrawMode({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const cssSide = Math.max(1, Math.floor(rect.width));
+    // Use clientWidth/clientHeight to exclude borders (works for both desktop and mobile)
+    const cssWidth = canvas.clientWidth || 1;
+    const cssHeight = canvas.clientHeight || cssWidth;
+    const cssSide = Math.max(1, Math.floor(cssWidth));
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
     const target = Math.max(1, Math.floor(cssSide * dpr));
 
-    if (canvas.width === target && canvas.height === target) return;
+    if (canvas.width === target && canvas.height === target) {
+      setCanvasDimensions(prev => {
+        const next = {
+          pixelWidth: canvas.width,
+          pixelHeight: canvas.height,
+          cssWidth: cssWidth,
+          cssHeight: cssHeight
+        };
+        if (
+          prev.pixelWidth === next.pixelWidth &&
+          prev.pixelHeight === next.pixelHeight &&
+          prev.cssWidth === next.cssWidth &&
+          prev.cssHeight === next.cssHeight
+        ) {
+          return prev;
+        }
+        return next;
+      });
+      return;
+    }
 
     let prevUrl: string | null = null;
     if (preserve) {
@@ -149,6 +201,12 @@ export default function DrawMode({
 
     canvas.width = target;
     canvas.height = target;
+    setCanvasDimensions({
+      pixelWidth: canvas.width,
+      pixelHeight: canvas.height,
+      cssWidth: cssWidth,
+      cssHeight: cssHeight
+    });
 
     const ctx = getCanvas2DContext(canvas);
     if (!ctx) return;
@@ -191,6 +249,10 @@ export default function DrawMode({
       importDragRef.current.pointerId = null;
     }
   }, [pendingImport]);
+
+  useEffect(() => {
+    lassoPointsRef.current = lassoPoints;
+  }, [lassoPoints]);
 
   // Load initial image if provided (from "Edit Image" flow).
   // We *do not* prompt for preprocessing here by default; that prompt is intended
@@ -276,6 +338,17 @@ export default function DrawMode({
     return uniq;
   };
 
+  const tracePolygon = (ctx: CanvasRenderingContext2D, points: Array<{ x: number; y: number }>) => {
+    if (!points.length) return false;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.closePath();
+    return true;
+  };
+
   const getCanvasCoordsFromClient = (clientX: number, clientY: number, clampToBounds = false) => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
@@ -289,6 +362,22 @@ export default function DrawMode({
     return { x, y };
   };
 
+  const lassoPathData = useMemo(() => {
+    const { pixelWidth, pixelHeight } = canvasDimensions;
+    if (!pixelWidth || !pixelHeight) return '';
+    const pts = finalLasso ?? (drawTool === 'lasso' && lassoPoints.length > 1 ? lassoPoints : null);
+    if (!pts || pts.length < 2) return '';
+    // Use raw pixel coordinates - no scaling needed since viewBox matches canvas pixel dimensions
+    let path = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 1; i < pts.length; i++) {
+      path += ` L ${pts[i].x} ${pts[i].y}`;
+    }
+    path += ' Z';
+    return path;
+  }, [canvasDimensions, finalLasso, drawTool, lassoPoints]);
+
+  const hasFinalLasso = !!finalLasso;
+
   const pushUndoSnapshot = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -296,8 +385,11 @@ export default function DrawMode({
     if (!ctx) return;
     try {
       const snap = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      console.log('[DrawMode] pushUndoSnapshot called, clearing redo stack');
+      console.trace('[DrawMode] pushUndoSnapshot stack trace');
       setUndoStack(prev => {
         const next = [...prev, snap];
+        console.log('[DrawMode] Undo stack length after push:', next.length);
         return next.length > HISTORY_LIMIT ? next.slice(next.length - HISTORY_LIMIT) : next;
       });
       setRedoStack([]);
@@ -305,12 +397,21 @@ export default function DrawMode({
   }, []);
 
   const applyImageData = (img: ImageData | null) => {
+    console.log('[DrawMode] applyImageData called', img ? `${img.width}x${img.height}` : 'null');
     const canvas = canvasRef.current;
-    if (!canvas || !img) return;
+    if (!canvas || !img) {
+      console.log('[DrawMode] applyImageData - no canvas or no img, returning');
+      return;
+    }
     const ctx = getCanvas2DContext(canvas);
-    if (!ctx) return;
+    if (!ctx) {
+      console.log('[DrawMode] applyImageData - no context, returning');
+      return;
+    }
+    console.log('[DrawMode] applyImageData - putting image data to canvas');
     ctx.putImageData(img, 0, 0);
     setDrips([]);
+    console.log('[DrawMode] applyImageData - complete');
   };
 
   // ===== Preprocess pipeline =====
@@ -374,18 +475,34 @@ export default function DrawMode({
     if (!canvas) return;
     const ctx = getCanvas2DContext(canvas);
     if (!ctx) return;
-    setUndoStack(prev => {
-      if (prev.length === 0) return prev;
-      setRedoStack(rp => {
-        try {
-          const current = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          return [...rp, current].slice(-HISTORY_LIMIT);
-        } catch { return rp; }
-      });
-      const last = prev[prev.length - 1];
+
+    console.log('[DrawMode] Undo called');
+
+    // Check if there's anything to undo
+    if (undoStack.length === 0) {
+      console.log('[DrawMode] Undo stack is empty');
+      return;
+    }
+
+    try {
+      // Get current state and last undo state
+      const current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const last = undoStack[undoStack.length - 1];
+
+      console.log('[DrawMode] Undo stack length:', undoStack.length);
+      console.log('[DrawMode] Moving to redo stack');
+
+      // Update both stacks
+      setRedoStack(prev => [...prev, current].slice(-HISTORY_LIMIT));
+      setUndoStack(prev => prev.slice(0, -1));
+
+      // Apply the restored state
       applyImageData(last);
-      return prev.slice(0, -1);
-    });
+
+      console.log('[DrawMode] Undo complete');
+    } catch (err) {
+      console.error('[DrawMode] Undo failed:', err);
+    }
   };
 
   const redo = () => {
@@ -394,18 +511,34 @@ export default function DrawMode({
     if (!canvas) return;
     const ctx = getCanvas2DContext(canvas);
     if (!ctx) return;
-    setRedoStack(prev => {
-      if (prev.length === 0) return prev;
-      setUndoStack(up => {
-        try {
-          const current = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          return [...up, current].slice(-HISTORY_LIMIT);
-        } catch { return up; }
-      });
-      const last = prev[prev.length - 1];
+
+    console.log('[DrawMode] Redo called');
+
+    // Check if there's anything to redo
+    if (redoStack.length === 0) {
+      console.log('[DrawMode] Redo stack is empty, cannot redo');
+      return;
+    }
+
+    try {
+      // Get current state and last redo state
+      const current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const last = redoStack[redoStack.length - 1];
+
+      console.log('[DrawMode] Redo stack length:', redoStack.length);
+      console.log('[DrawMode] Moving to undo stack');
+
+      // Update both stacks
+      setUndoStack(prev => [...prev, current].slice(-HISTORY_LIMIT));
+      setRedoStack(prev => prev.slice(0, -1));
+
+      // Apply the restored state
       applyImageData(last);
-      return prev.slice(0, -1);
-    });
+
+      console.log('[DrawMode] Redo complete');
+    } catch (err) {
+      console.error('[DrawMode] Redo failed:', err);
+    }
   };
 
   const drawQuadraticSegment = (
@@ -528,11 +661,19 @@ export default function DrawMode({
     try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
     activePointerIdRef.current = e.pointerId;
 
+    const coords = getCanvasCoordsFromClient(e.clientX, e.clientY);
+    if (!coords) return;
+
     setIsDrawing(true);
     setIsOutsideCanvas(false);
 
-    const coords = getCanvasCoordsFromClient(e.clientX, e.clientY);
-    if (!coords) return;
+    if (drawTool === 'lasso') {
+      setLassoPoints([coords]);
+      setFinalLasso(null);
+      setShowLassoPrompt(false);
+      setLassoPrompt('');
+      return;
+    }
 
     pushUndoSnapshot();
 
@@ -745,6 +886,20 @@ export default function DrawMode({
       for (const ev of events) processBrushOrEraser(ev.clientX, ev.clientY, ev.pressure ?? 1);
       return;
     }
+    if (drawTool === 'lasso') {
+      const last = events[events.length - 1];
+      const coords = getCanvasCoordsFromClient(last.clientX, last.clientY, true);
+      if (!coords) return;
+      setLassoPoints(prev => {
+        if (prev.length === 0) return prev;
+        const p = prev[prev.length - 1];
+        const dx = coords.x - p.x;
+        const dy = coords.y - p.y;
+        if (dx * dx + dy * dy < 9) return prev;
+        return [...prev, coords];
+      });
+      return;
+    }
     if (drawTool === 'square') {
       const last = events[events.length - 1];
       processSquare(last.clientX, last.clientY);
@@ -770,6 +925,25 @@ export default function DrawMode({
     try { (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId); } catch {}
     activePointerIdRef.current = null;
 
+    if (drawTool === 'lasso') {
+      const points = lassoPointsRef.current;
+      if (points.length >= 3) {
+        const copy = points.map(p => ({ x: p.x, y: p.y }));
+        setFinalLasso(copy);
+        setLassoPoints([]);
+        setShowLassoPrompt(true);
+        setLassoPrompt('');
+        setControlnetType('inpaint');
+        announce?.('Describe how you want to change the selected area');
+      } else {
+        if (points.length > 0) {
+          announce?.('Selection needs at least three points');
+        }
+        setFinalLasso(null);
+        setLassoPoints([]);
+      }
+    }
+
     setIsDrawing(false);
     setStartPos(null);
     setBaseImageData(null);
@@ -778,31 +952,6 @@ export default function DrawMode({
     brushPointsRef.current = [];
     lastBrushPointRef.current = null;
   };
-
-  useEffect(() => {
-    if (!isDrawing) return;
-    const handleUp = () => {
-      const canvas = canvasRef.current as any;
-      const id = activePointerIdRef.current;
-      if (canvas && typeof canvas.releasePointerCapture === 'function' && id != null) {
-        try { canvas.releasePointerCapture(id); } catch {}
-      }
-      activePointerIdRef.current = null;
-      setIsDrawing(false);
-      setStartPos(null);
-      setBaseImageData(null);
-      setLastPos(null);
-      setIsOutsideCanvas(false);
-      brushPointsRef.current = [];
-      lastBrushPointRef.current = null;
-    };
-    window.addEventListener('pointerup', handleUp, { passive: true });
-    window.addEventListener('pointercancel', handleUp, { passive: true });
-    return () => {
-      window.removeEventListener('pointerup', handleUp);
-      window.removeEventListener('pointercancel', handleUp);
-    };
-  }, [isDrawing]);
 
   // Drips animator (calligraphy effect)
   useEffect(() => {
@@ -880,9 +1029,320 @@ export default function DrawMode({
     return await new Promise<Blob | null>(resolve => off.toBlob(b => resolve(b), type));
   };
 
+  const exportLassoSelection = async (
+    polygon: Array<{ x: number; y: number }>,
+    type: 'image/png' = 'image/png'
+  ): Promise<{ blob: Blob | null; dataUrl: string | null }> => {
+    const canvas = canvasRef.current;
+    if (!canvas || polygon.length < 3) return { blob: null, dataUrl: null };
+    const off = document.createElement('canvas');
+    off.width = canvas.width;
+    off.height = canvas.height;
+    const ctx = getCanvas2DContext(off);
+    if (!ctx) return { blob: null, dataUrl: null };
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, off.width, off.height);
+    ctx.drawImage(canvas, 0, 0);
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    if (tracePolygon(ctx, polygon)) {
+      ctx.fill();
+    }
+    ctx.restore();
+
+    const blob = await new Promise<Blob | null>(resolve => off.toBlob(b => resolve(b), type));
+    if (!blob) return { blob: null, dataUrl: null };
+
+    const dataUrl = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.readAsDataURL(blob);
+    });
+
+    return { blob, dataUrl };
+  };
+
+  const applyInpaintResult = useCallback(
+    async (resultBlob: Blob) => {
+      console.log('[DrawMode] applyInpaintResult called with blob:', resultBlob.size, 'bytes');
+      const canvas = canvasRef.current;
+      if (!canvas) throw new Error('Canvas not ready');
+      const ctx = getCanvas2DContext(canvas);
+      if (!ctx) throw new Error('Canvas context unavailable');
+
+      const drawFromImageElement = () =>
+        new Promise<void>((resolve, reject) => {
+          console.log('[DrawMode] Using Image() fallback to draw inpaint result');
+          const url = URL.createObjectURL(resultBlob);
+          const img = new Image();
+          img.decoding = 'async';
+          img.onload = () => {
+            try {
+              console.log('[DrawMode] Image loaded, applying to canvas');
+              pushUndoSnapshot();
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              setDrips([]);
+              resolve();
+            } finally {
+              URL.revokeObjectURL(url);
+            }
+          };
+          img.onerror = () => {
+            console.error('[DrawMode] Image load failed');
+            URL.revokeObjectURL(url);
+            reject(new Error('Failed to load inpaint result image'));
+          };
+          img.src = url;
+        });
+
+      let applied = false;
+      if (typeof window !== 'undefined' && 'createImageBitmap' in window && typeof window.createImageBitmap === 'function') {
+        try {
+          console.log('[DrawMode] Using createImageBitmap to draw inpaint result');
+          const bitmap = await createImageBitmap(resultBlob);
+          pushUndoSnapshot();
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+          setDrips([]);
+          if (typeof bitmap.close === 'function') {
+            bitmap.close();
+          }
+          applied = true;
+          console.log('[DrawMode] Successfully applied inpaint result via createImageBitmap');
+        } catch (err) {
+          console.warn('[DrawMode] createImageBitmap failed, falling back to Image()', err);
+        }
+      }
+
+      if (!applied) {
+        await drawFromImageElement();
+      }
+      console.log('[DrawMode] applyInpaintResult completed');
+    },
+    [pushUndoSnapshot]
+  );
+
+  const waitForInpaintResult = useCallback((projectId: string) => {
+    return new Promise<Blob>((resolve, reject) => {
+      let settled = false;
+      const es = new EventSource(resolveApiUrl(`/api/progress/${projectId}`));
+
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        try {
+          es.close();
+        } catch {/* ignore */}
+        reject(error);
+      };
+
+      es.onmessage = async (evt) => {
+        if (settled) return;
+        let data: any;
+        try {
+          data = JSON.parse(evt.data);
+        } catch {
+          return;
+        }
+        if (!data) return;
+
+        console.log('[DrawMode] Inpaint SSE event:', data.type, data);
+
+        if (data.type === 'jobCompleted') {
+          if (data.job?.isNSFW) {
+            fail(new Error('Inpaint result flagged as unsafe'));
+            return;
+          }
+          const resultPath: string | undefined = data.proxyUrl || data.job?.resultUrl;
+          if (!resultPath) {
+            fail(new Error('Missing inpaint result URL'));
+            return;
+          }
+
+          console.log('[DrawMode] Fetching inpaint result from:', resultPath);
+          settled = true;
+          try {
+            es.close();
+          } catch {/* ignore */}
+
+          try {
+            const response = await fetch(resolveApiUrl(resultPath));
+            console.log('[DrawMode] Fetch response status:', response.status, response.ok);
+            if (!response.ok) {
+              reject(new Error(`Failed to download inpaint result (${response.status})`));
+              return;
+            }
+            const blob = await response.blob();
+            console.log('[DrawMode] Got inpaint blob:', blob.size, 'bytes');
+            resolve(blob);
+          } catch (err) {
+            console.error('[DrawMode] Fetch error:', err);
+            reject(err instanceof Error ? err : new Error('Failed to download inpaint result'));
+          }
+          return;
+        }
+
+        if (data.type === 'error' || data.type === 'jobFailed' || data.type === 'failed') {
+          fail(new Error(data.error || 'Inpaint failed to generate'));
+          return;
+        }
+
+        // Ignore 'completed' event - we already got the result from 'jobCompleted'
+        if (data.type === 'completed') {
+          console.log('[DrawMode] Ignoring completed event (already handled jobCompleted)');
+          return;
+        }
+      };
+
+      es.onerror = () => {
+        fail(new Error('Connection lost while waiting for inpaint result'));
+      };
+    });
+  }, []);
+
   // I/O: upload / paste / drag
   const fileInputRef = useRef<HTMLInputElement>(null);
   const openFilePicker = () => fileInputRef.current?.click();
+
+  const cancelLassoSelection = useCallback(() => {
+    setIsSubmittingLasso(false);
+    setShowLassoPrompt(false);
+    setFinalLasso(null);
+    setLassoPrompt('');
+    setLassoPoints([]);
+  }, []);
+
+  useEffect(() => {
+    if (!isDrawing) return;
+    const handleUp = (evt: PointerEvent) => {
+      const canvas = canvasRef.current as any;
+      const id = activePointerIdRef.current;
+      if (canvas && typeof canvas.releasePointerCapture === 'function' && id != null) {
+        try { canvas.releasePointerCapture(id); } catch {}
+      }
+      activePointerIdRef.current = null;
+      if (evt.type === 'pointercancel' && drawTool === 'lasso') {
+        cancelLassoSelection();
+      }
+      setIsDrawing(false);
+      setStartPos(null);
+      setBaseImageData(null);
+      setLastPos(null);
+      setIsOutsideCanvas(false);
+      brushPointsRef.current = [];
+      lastBrushPointRef.current = null;
+    };
+    window.addEventListener('pointerup', handleUp, { passive: true });
+    window.addEventListener('pointercancel', handleUp, { passive: true });
+    return () => {
+      window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleUp);
+    };
+  }, [cancelLassoSelection, drawTool, isDrawing]);
+
+  const handleConfirmLasso = useCallback(
+    async (evt?: React.FormEvent<HTMLFormElement>) => {
+      evt?.preventDefault();
+      if (!finalLasso || finalLasso.length < 3) {
+        announce?.('Select an area with the lasso first');
+        return;
+      }
+      const trimmedPrompt = lassoPrompt.trim();
+      if (!trimmedPrompt) {
+        announce?.('Describe what you want to change in the selected area');
+        return;
+      }
+      if (isSubmittingLasso) return;
+
+      setIsSubmittingLasso(true);
+      setControlnetType('inpaint');
+
+      try {
+        announce?.('Submitting selection for inpainting…');
+        console.log('[DrawMode] Exporting lasso selection...');
+        const { blob } = await exportLassoSelection(finalLasso, 'image/png');
+        if (!blob) {
+          throw new Error('Could not prepare the inpaint selection');
+        }
+        console.log('[DrawMode] Lasso selection exported:', blob.size, 'bytes');
+
+        const form = new FormData();
+        form.append('prompt', trimmedPrompt);
+        form.append('title', trimmedPrompt);
+        form.append('style', 'Simple Ink');
+        form.append('controlnetType', 'inpaint');
+        form.append('numberOfImages', '1');
+        form.append('controlImage', blob, 'lasso-selection.png');
+
+        console.log('[DrawMode] Submitting to /api/generate-controlnet...');
+        const response = await fetch(resolveApiUrl('/api/generate-controlnet'), {
+          method: 'POST',
+          body: form
+        });
+
+        if (!response.ok) {
+          let message = 'Failed to start inpainting';
+          try {
+            const data = await response.json();
+            if (data?.error) {
+              message = data.error;
+            }
+          } catch {
+            const text = await response.text();
+            if (text) message = text;
+          }
+          throw new Error(message);
+        }
+
+        const payload = await response.json();
+        const projectId = payload?.projectId;
+        if (!projectId) {
+          throw new Error('Missing project reference for inpainting');
+        }
+        console.log('[DrawMode] Got projectId:', projectId);
+
+        console.log('[DrawMode] Waiting for inpaint result...');
+        const resultBlob = await waitForInpaintResult(String(projectId));
+        console.log('[DrawMode] Got result blob, checking if mounted...');
+        if (!isMountedRef.current) {
+          console.log('[DrawMode] Component unmounted, aborting');
+          return;
+        }
+        console.log('[DrawMode] Applying inpaint result to canvas...');
+        await applyInpaintResult(resultBlob);
+        console.log('[DrawMode] Inpaint result applied successfully');
+
+        if (isMountedRef.current) {
+          console.log('[DrawMode] Cleaning up lasso selection...');
+          setVisionPrompt(trimmedPrompt);
+          cancelLassoSelection();
+        }
+        announce?.('Selection updated');
+        console.log('[DrawMode] handleConfirmLasso completed successfully');
+      } catch (err) {
+        console.error(err);
+        const message = err instanceof Error ? err.message : 'Failed to inpaint selection';
+        announce?.(message);
+      } finally {
+        if (isMountedRef.current) {
+          setIsSubmittingLasso(false);
+        }
+      }
+    },
+    [
+      announce,
+      applyInpaintResult,
+      cancelLassoSelection,
+      exportLassoSelection,
+      finalLasso,
+      isSubmittingLasso,
+      lassoPrompt,
+      setControlnetType,
+      setVisionPrompt,
+      waitForInpaintResult
+    ]
+  );
 
   const drawImageContain = (img: HTMLImageElement) => {
     const canvas = canvasRef.current;
@@ -1303,6 +1763,19 @@ export default function DrawMode({
     if (isTypingTarget(e.target)) return;
     const key = e.key.toLowerCase();
 
+    if (showLassoPrompt) {
+      if (key === 'escape') {
+        e.preventDefault();
+        cancelLassoSelection();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && key === 'enter') {
+        e.preventDefault();
+        void handleConfirmLasso();
+        return;
+      }
+    }
+
     if (pendingImportRef.current) {
       if ((e.metaKey || e.ctrlKey) && key === 'o') { e.preventDefault(); return; }
       if ((e.metaKey || e.ctrlKey) && key === 's') { e.preventDefault(); return; }
@@ -1331,11 +1804,19 @@ export default function DrawMode({
     if (key === 'p') { setDrawTool('calligraphy'); return; }
     if (key === 'r') { setDrawTool('square'); return; }
     if (key === 'c') { setDrawTool('circle'); return; }
+    if (key === 'l') { setDrawTool('lasso'); return; }
 
     if (key === 'g') { setShowGrid(v => !v); return; }
     if (key === 'h') { setSymmetryH(v => !v); return; }
     if (key === 'v') { setSymmetryV(v => !v); return; }
-    if (key === 'escape') { onClose(); return; }
+    if (key === 'escape') {
+      if (finalLasso) {
+        cancelLassoSelection();
+        return;
+      }
+      onClose();
+      return;
+    }
   };
 
   const handleCreate = async () => {
@@ -1499,6 +1980,7 @@ export default function DrawMode({
             <button className={`tool-btn ${drawTool === 'calligraphy' ? 'active' : ''}`} aria-pressed={drawTool === 'calligraphy'} onClick={() => setDrawTool('calligraphy')} title="Calligraphy Pen (P)">🖋️</button>
             <button className={`tool-btn ${drawTool === 'square' ? 'active' : ''}`} aria-pressed={drawTool === 'square'} onClick={() => setDrawTool('square')} title="Rectangle (R)">⬛</button>
             <button className={`tool-btn ${drawTool === 'circle' ? 'active' : ''}`} aria-pressed={drawTool === 'circle'} onClick={() => setDrawTool('circle')} title="Circle (C)">⭕</button>
+            <button className={`tool-btn ${drawTool === 'lasso' ? 'active' : ''}`} aria-pressed={drawTool === 'lasso'} onClick={() => setDrawTool('lasso')} title="Lasso Inpaint (L)">➰</button>
             <button className={`tool-btn ${drawTool === 'eraser' ? 'active' : ''}`} aria-pressed={drawTool === 'eraser'} onClick={() => setDrawTool('eraser')} title="Eraser (E)">🧽</button>
 
             <div className="rail-divider" />
@@ -1524,6 +2006,20 @@ export default function DrawMode({
                 onWheel={handleCanvasWheel}
                 aria-label="Drawing canvas"
               />
+              {lassoPathData && (
+                <svg
+                  className={`lasso-overlay ${hasFinalLasso ? 'lasso-overlay--final' : ''}`}
+                  viewBox={`0 0 ${Math.max(1, canvasDimensions.pixelWidth)} ${Math.max(1, canvasDimensions.pixelHeight)}`}
+                  preserveAspectRatio="none"
+                  style={{
+                    width: `${canvasDimensions.cssWidth}px`,
+                    height: `${canvasDimensions.cssHeight}px`
+                  }}
+                >
+                  <path className={`lasso-overlay__fill ${hasFinalLasso ? 'is-final' : ''}`} d={lassoPathData} />
+                  <path className={`lasso-overlay__stroke ${hasFinalLasso ? 'is-final' : ''}`} d={lassoPathData} />
+                </svg>
+              )}
               {showGrid && <div className="grid-overlay" />}
               {(symmetryH || symmetryV) && (
                 <div className={`sym-guides ${symmetryH ? 'h' : ''} ${symmetryV ? 'v' : ''}`} />
@@ -1701,6 +2197,20 @@ export default function DrawMode({
               onWheel={handleCanvasWheel}
               aria-label="Drawing canvas"
             />
+            {lassoPathData && (
+              <svg
+                className={`lasso-overlay ${hasFinalLasso ? 'lasso-overlay--final' : ''}`}
+                viewBox={`0 0 ${Math.max(1, canvasDimensions.pixelWidth)} ${Math.max(1, canvasDimensions.pixelHeight)}`}
+                preserveAspectRatio="none"
+                style={{
+                  width: `${canvasDimensions.cssWidth}px`,
+                  height: `${canvasDimensions.cssHeight}px`
+                }}
+              >
+                <path className={`lasso-overlay__fill ${hasFinalLasso ? 'is-final' : ''}`} d={lassoPathData} />
+                <path className={`lasso-overlay__stroke ${hasFinalLasso ? 'is-final' : ''}`} d={lassoPathData} />
+              </svg>
+            )}
             {showGrid && <div className="mobile-grid-overlay" />}
             {(symmetryH || symmetryV) && (
               <div className={`mobile-sym-guides ${symmetryH ? 'h' : ''} ${symmetryV ? 'v' : ''}`} />
@@ -1775,6 +2285,13 @@ export default function DrawMode({
                 title="Circle"
               >
                 ⭕
+              </button>
+              <button
+                className={`toolbar-btn ${drawTool === 'lasso' ? 'active' : ''}`}
+                onClick={() => setDrawTool('lasso')}
+                title="Lasso Inpaint"
+              >
+                ➰
               </button>
               <button
                 className={`toolbar-btn ${drawTool === 'eraser' ? 'active' : ''}`}
@@ -1885,6 +2402,56 @@ export default function DrawMode({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {showLassoPrompt && (
+        <div className="lasso-modal-backdrop" role="dialog" aria-modal="true">
+          <form
+            className="lasso-modal"
+            onSubmit={(evt) => {
+              void handleConfirmLasso(evt);
+            }}
+          >
+            <h3>Inpaint Selection</h3>
+            <p className="lasso-modal__hint">Describe how you want the highlighted area to change.</p>
+            <textarea
+              className="lasso-modal__input"
+              value={lassoPrompt}
+              onChange={(evt) => setLassoPrompt(evt.target.value)}
+              placeholder="e.g. replace the sword with a bouquet of flowers"
+              rows={4}
+              disabled={isSubmittingLasso}
+              autoFocus
+              onKeyDown={(evt) => {
+                if (evt.key === 'Enter' && !evt.shiftKey) {
+                  // Enter submits (Shift+Enter adds new line)
+                  evt.preventDefault();
+                  void handleConfirmLasso();
+                } else if (evt.key === 'Escape') {
+                  evt.preventDefault();
+                  cancelLassoSelection();
+                }
+              }}
+            />
+            <div className="lasso-modal__actions">
+              <button
+                type="button"
+                className="lasso-modal__btn secondary"
+                onClick={cancelLassoSelection}
+                disabled={isSubmittingLasso}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="lasso-modal__btn primary"
+                disabled={isSubmittingLasso || !lassoPrompt.trim()}
+              >
+                {isSubmittingLasso ? 'Rendering…' : 'Inpaint Selection'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

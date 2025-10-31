@@ -324,6 +324,18 @@ function clamp01(x) {
   return x;
 }
 
+function parseImageCount(value, fallback = CONTROLNET_RENDER_DEFAULTS.numberOfImages) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  const rounded = Math.round(n);
+  if (!Number.isFinite(rounded)) return fallback;
+  if (rounded < 1) return 1;
+  if (rounded > CONTROLNET_RENDER_DEFAULTS.numberOfImages) {
+    return CONTROLNET_RENDER_DEFAULTS.numberOfImages;
+  }
+  return rounded;
+}
+
 /**
  * Normalize progress: accepts 0..100 or 0..1 or (step, stepCount)
  * Returns a 0..1 float.
@@ -808,6 +820,8 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
       controlnetType = 'scribble'  // Default to scribble for backward compatibility
     } = req.body || {};
 
+    const imageCount = parseImageCount(req.body?.numberOfImages);
+
     const baseText = String(title || prompt || '').trim();
     if (!baseText) {
       return res.status(400).json({ error: 'Missing title or prompt' });
@@ -863,6 +877,7 @@ app.post('/api/generate-controlnet', upload.single('controlImage'), async (req, 
     // IMPORTANT: Use ControlNet-specific defaults for traditional diffusion models
     const createPayload = {
       ...CONTROLNET_RENDER_DEFAULTS,      // Use ControlNet defaults (guidance: 7.5, steps: 34)
+      numberOfImages: imageCount,
       modelId,
       positivePrompt: finalPrompt,        // Enhanced prompt for bold ink tattoos
       disableNSFWFilter: false,
