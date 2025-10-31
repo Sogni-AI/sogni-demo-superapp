@@ -1,5 +1,5 @@
 // web/src/components/DrawMode.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { HISTORY_LIMIT, MAX_DPR } from '../constants';
 import './MobileDrawStyles.css';
 import PreprocessModal from './PreprocessModal';
@@ -17,6 +17,36 @@ type DrawModeProps = {
   announce?: (msg: string) => void;
   defaultControlnetType?: string;
   initialImage?: { url: string; prompt: string } | null;
+};
+
+type PendingImport = {
+  img: HTMLImageElement;
+  scale: number;
+  minScale: number;
+  maxScale: number;
+  baseScale: number;
+  centerX: number;
+  centerY: number;
+};
+
+const getCanvas2DContext = (
+  canvas: HTMLCanvasElement | null,
+  options?: CanvasRenderingContext2DSettings
+): CanvasRenderingContext2D | null => {
+  if (!canvas) return null;
+  const context = options ? canvas.getContext('2d', options) : canvas.getContext('2d');
+  return context && 'getImageData' in context ? context : null;
+};
+
+const isTypingTarget = (target: EventTarget | null): boolean => {
+  if (!target || !(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (target instanceof HTMLTextAreaElement) return true;
+  if (target instanceof HTMLInputElement) {
+    const reject = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'color', 'range']);
+    return !reject.has(target.type?.toLowerCase?.() || '');
+  }
+  return false;
 };
 
 /**
@@ -76,6 +106,18 @@ export default function DrawMode({
   >([]);
   const dripCounter = useRef(0);
 
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  const pendingImportRef = useRef<PendingImport | null>(null);
+  const importBaseImageRef = useRef<ImageData | null>(null);
+  const importDragRef = useRef<{
+    active: boolean;
+    pointerId: number | null;
+    startX: number;
+    startY: number;
+    baseCenterX: number;
+    baseCenterY: number;
+  }>({ active: false, pointerId: null, startX: 0, startY: 0, baseCenterX: 0, baseCenterY: 0 });
+
   // Brush smoothing helpers
   const brushPointsRef = useRef<Array<{ x: number; y: number }>>([]);
   const lastBrushPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -108,7 +150,7 @@ export default function DrawMode({
     canvas.width = target;
     canvas.height = target;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = getCanvas2DContext(canvas);
     if (!ctx) return;
 
     ctx.save();
@@ -142,6 +184,14 @@ export default function DrawMode({
     };
   }, [resizeCanvasToDisplaySize]);
 
+  useEffect(() => {
+    pendingImportRef.current = pendingImport;
+    if (!pendingImport) {
+      importDragRef.current.active = false;
+      importDragRef.current.pointerId = null;
+    }
+  }, [pendingImport]);
+
   // Load initial image if provided (from "Edit Image" flow).
   // We *do not* prompt for preprocessing here by default; that prompt is intended
   // for user uploads/drops/pastes. You can opt in by flipping the ref below
@@ -155,8 +205,9 @@ export default function DrawMode({
 
       img.onload = () => {
         const canvas = canvasRef.current;
-        const ctx = canvas?.getContext('2d');
-        if (!canvas || !ctx) return;
+        if (!canvas) return;
+        const ctx = getCanvas2DContext(canvas);
+        if (!ctx) return;
 
         const cw = canvas.width;
         const ch = canvas.height;
@@ -225,21 +276,24 @@ export default function DrawMode({
     return uniq;
   };
 
-  const getCanvasCoordsFromClient = (clientX: number, clientY: number) => {
+  const getCanvasCoordsFromClient = (clientX: number, clientY: number, clampToBounds = false) => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const x = (clientX - rect.left) * scaleX;
-    const y = (clientY - rect.top) * scaleY;
-    if (x < 0 || x > canvas.width || y < 0 || y > canvas.height) return null;
+    const rawX = (clientX - rect.left) * scaleX;
+    const rawY = (clientY - rect.top) * scaleY;
+    if (!clampToBounds && (rawX < 0 || rawX > canvas.width || rawY < 0 || rawY > canvas.height)) return null;
+    const x = Math.max(0, Math.min(canvas.width, rawX));
+    const y = Math.max(0, Math.min(canvas.height, rawY));
     return { x, y };
   };
 
   const pushUndoSnapshot = useCallback(() => {
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
     try {
       const snap = ctx.getImageData(0, 0, canvas.width, canvas.height);
       setUndoStack(prev => {
@@ -252,8 +306,9 @@ export default function DrawMode({
 
   const applyImageData = (img: ImageData | null) => {
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx || !img) return;
+    if (!canvas || !img) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
     ctx.putImageData(img, 0, 0);
     setDrips([]);
   };
@@ -261,8 +316,9 @@ export default function DrawMode({
   // ===== Preprocess pipeline =====
   const preprocessCanvasForControlnet = useCallback((levels = 3, contrastStrength = 0.8) => {
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d', { willReadFrequently: true } as any);
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas, { willReadFrequently: true });
+    if (!ctx) return;
 
     // Snapshot so user can undo preprocessing
     pushUndoSnapshot();
@@ -310,9 +366,14 @@ export default function DrawMode({
   }, [announce, pushUndoSnapshot]);
 
   const undo = () => {
+    if (pendingImportRef.current) {
+      cancelPendingImport();
+      return;
+    }
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
     setUndoStack(prev => {
       if (prev.length === 0) return prev;
       setRedoStack(rp => {
@@ -328,9 +389,11 @@ export default function DrawMode({
   };
 
   const redo = () => {
+    if (pendingImportRef.current) return;
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
     setRedoStack(prev => {
       if (prev.length === 0) return prev;
       setUndoStack(up => {
@@ -369,7 +432,7 @@ export default function DrawMode({
 
   const drawBrushSegment = (current: { x: number; y: number }, pressureNow: number) => {
     const canvas = canvasRef.current!;
-    const ctx = canvas.getContext('2d');
+    const ctx = getCanvas2DContext(canvas);
     if (!ctx) return;
 
     const composite: GlobalCompositeOperation = drawTool === 'eraser' ? 'destination-out' : 'source-over';
@@ -452,10 +515,14 @@ export default function DrawMode({
   };
 
   const startDrawingPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (pendingImportRef.current) {
+      handleImportPointerDown(e);
+      return;
+    }
     e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = getCanvas2DContext(canvas);
     if (!ctx) return;
 
     try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
@@ -508,9 +575,11 @@ export default function DrawMode({
   };
 
   const processSquare = (clientX: number, clientY: number) => {
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext('2d')!;
-    const coords = getCanvasCoordsFromClient(clientX, clientY);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
+    const coords = getCanvasCoordsFromClient(clientX, clientY, true);
     if (!coords) return;
     if (!(drawTool === 'square' && startPos && baseImageData)) return;
     ctx.putImageData(baseImageData, 0, 0);
@@ -539,9 +608,11 @@ export default function DrawMode({
   };
 
   const processCircle = (clientX: number, clientY: number) => {
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext('2d')!;
-    const coords = getCanvasCoordsFromClient(clientX, clientY);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
+    const coords = getCanvasCoordsFromClient(clientX, clientY, true);
     if (!coords) return;
     if (!(drawTool === 'circle' && startPos && baseImageData)) return;
     ctx.putImageData(baseImageData, 0, 0);
@@ -563,8 +634,10 @@ export default function DrawMode({
   };
 
   const processCalligraphy = (clientX: number, clientY: number) => {
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext('2d')!;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
     const coords = getCanvasCoordsFromClient(clientX, clientY);
     if (!coords || !lastPos) return;
 
@@ -620,13 +693,18 @@ export default function DrawMode({
   };
 
   const drawPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (pendingImportRef.current) {
+      handleImportPointerMove(e);
+      return;
+    }
     if (!isDrawing) return;
     if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return;
 
     e.preventDefault();
 
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext('2d');
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
     if (!ctx) return;
 
     const native = (e as any).nativeEvent || e;
@@ -684,6 +762,10 @@ export default function DrawMode({
   };
 
   const endDrawingPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (pendingImportRef.current) {
+      handleImportPointerUp(e);
+      return;
+    }
     e.preventDefault();
     try { (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId); } catch {}
     activePointerIdRef.current = null;
@@ -729,7 +811,7 @@ export default function DrawMode({
       setDrips(prevDrips => {
         const canvas = canvasRef.current;
         if (!canvas) return prevDrips;
-        const ctx = canvas.getContext('2d');
+        const ctx = getCanvas2DContext(canvas);
         if (!ctx) return prevDrips;
 
         const updated = prevDrips
@@ -752,9 +834,14 @@ export default function DrawMode({
   }, [drips.length, drawColor]);
 
   const clearCanvas = () => {
+    if (pendingImportRef.current) {
+      cancelPendingImport();
+      return;
+    }
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
     pushUndoSnapshot();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#ffffff';
@@ -763,9 +850,11 @@ export default function DrawMode({
   };
 
   const invertCanvas = () => {
+    if (pendingImportRef.current) return;
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
     pushUndoSnapshot();
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
@@ -783,7 +872,7 @@ export default function DrawMode({
     const off = document.createElement('canvas');
     off.width = src.width;
     off.height = src.height;
-    const octx = off.getContext('2d');
+    const octx = getCanvas2DContext(off);
     if (!octx) return null;
     octx.fillStyle = '#ffffff';
     octx.fillRect(0, 0, off.width, off.height);
@@ -797,8 +886,9 @@ export default function DrawMode({
 
   const drawImageContain = (img: HTMLImageElement) => {
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
 
     const cw = canvas.width;
     const ch = canvas.height;
@@ -821,7 +911,316 @@ export default function DrawMode({
     ctx.drawImage(img, dx, dy, dw, dh);
   };
 
+  const renderPendingImport = useCallback((state: PendingImport) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const destW = state.img.naturalWidth * state.scale;
+    const destH = state.img.naturalHeight * state.scale;
+    const dx = state.centerX - destW / 2;
+    const dy = state.centerY - destH / 2;
+    ctx.drawImage(state.img, dx, dy, destW, destH);
+  }, []);
+
+  const beginImagePlacement = useCallback((img: HTMLImageElement) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = getCanvas2DContext(canvas);
+    if (!ctx) return;
+
+    try {
+      importBaseImageRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    } catch {
+      importBaseImageRef.current = null;
+    }
+
+    const iw = img.naturalWidth || 1;
+    const ih = img.naturalHeight || 1;
+    const containScale = Math.min(canvas.width / iw, canvas.height / ih) || 1;
+    const baseScale = containScale || 1;
+    const minScale = Math.max(baseScale * 0.25, 0.05);
+    const maxScale = Math.max(baseScale * 6, baseScale * 1.5);
+
+    setIsDrawing(false);
+    setStartPos(null);
+    setBaseImageData(null);
+    setLastPos(null);
+    setIsOutsideCanvas(false);
+    brushPointsRef.current = [];
+    lastBrushPointRef.current = null;
+    lastPressureRef.current = 1;
+    activePointerIdRef.current = null;
+    setDrips([]);
+
+    const initialState: PendingImport = {
+      img,
+      scale: baseScale,
+      minScale,
+      maxScale,
+      baseScale,
+      centerX: canvas.width / 2,
+      centerY: canvas.height / 2
+    };
+
+    pendingImportRef.current = initialState;
+    setPendingImport(initialState);
+    renderPendingImport(initialState);
+
+    announce?.('Image loaded — drag to position, scroll to zoom, Enter to place');
+  }, [announce, getCanvas2DContext]);
+
+  useEffect(() => {
+    if (pendingImport) {
+      renderPendingImport(pendingImport);
+    }
+  }, [pendingImport, renderPendingImport]);
+
+  const commitPendingImport = useCallback(() => {
+    if (!pendingImportRef.current) return;
+    pushUndoSnapshot();
+    setPendingImport(null);
+    pendingImportRef.current = null;
+    importBaseImageRef.current = null;
+    lastLoadWasUserUploadRef.current = true;
+    setShowPreprocess(true);
+    announce?.('Image placed on canvas');
+  }, [announce, pushUndoSnapshot, setShowPreprocess]);
+
+  const cancelPendingImport = useCallback(() => {
+    const base = importBaseImageRef.current;
+    importBaseImageRef.current = null;
+    setPendingImport(null);
+    pendingImportRef.current = null;
+    if (base) applyImageData(base);
+    announce?.('Image placement canceled');
+  }, [announce, applyImageData]);
+
+  const setImportScale = useCallback((nextScale: number) => {
+    setPendingImport(prev => {
+      if (!prev) return prev;
+      const clamped = Math.max(prev.minScale, Math.min(prev.maxScale, nextScale));
+      if (clamped === prev.scale) return prev;
+      return { ...prev, scale: clamped };
+    });
+  }, []);
+
+  const handleImportScaleRatio = useCallback((ratio: number) => {
+    const current = pendingImportRef.current;
+    if (!current) return;
+    setImportScale(current.baseScale * ratio);
+  }, [setImportScale]);
+
+  const adjustImportScale = useCallback((multiplier: number) => {
+    setPendingImport(prev => {
+      if (!prev) return prev;
+      const clamped = Math.max(prev.minScale, Math.min(prev.maxScale, prev.scale * multiplier));
+      if (clamped === prev.scale) return prev;
+      return { ...prev, scale: clamped };
+    });
+  }, []);
+
+  const nudgePendingImport = useCallback((dx: number, dy: number) => {
+    setPendingImport(prev => {
+      if (!prev) return prev;
+      if (dx === 0 && dy === 0) return prev;
+      return { ...prev, centerX: prev.centerX + dx, centerY: prev.centerY + dy };
+    });
+  }, []);
+
+  const handleImportPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!pendingImportRef.current) return false;
+    e.preventDefault();
+    try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch {}
+    importDragRef.current = {
+      active: true,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      baseCenterX: pendingImportRef.current.centerX,
+      baseCenterY: pendingImportRef.current.centerY
+    };
+    return true;
+  };
+
+  const handleImportPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const pending = pendingImportRef.current;
+    if (!pending) return true;
+    const drag = importDragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return true;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return true;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const dx = (e.clientX - drag.startX) * scaleX;
+    const dy = (e.clientY - drag.startY) * scaleY;
+    setPendingImport(prev => {
+      if (!prev) return prev;
+      return { ...prev, centerX: drag.baseCenterX + dx, centerY: drag.baseCenterY + dy };
+    });
+    return true;
+  };
+
+  const handleImportPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = importDragRef.current;
+    if (drag.pointerId === e.pointerId) {
+      drag.active = false;
+      drag.pointerId = null;
+    }
+    try { (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId); } catch {}
+    return !!pendingImportRef.current;
+  };
+
+  const handleCanvasWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
+    if (!pendingImportRef.current) return;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const pointerX = (e.clientX - rect.left) * scaleX;
+    const pointerY = (e.clientY - rect.top) * scaleY;
+    setPendingImport(prev => {
+      if (!prev) return prev;
+      const zoomFactor = Math.pow(1.05, -e.deltaY / 53);
+      let nextScale = prev.scale * zoomFactor;
+      nextScale = Math.max(prev.minScale, Math.min(prev.maxScale, nextScale));
+      if (nextScale === prev.scale) return prev;
+      const ratio = nextScale / prev.scale;
+      const nextCenterX = pointerX - (pointerX - prev.centerX) * ratio;
+      const nextCenterY = pointerY - (pointerY - prev.centerY) * ratio;
+      return { ...prev, scale: nextScale, centerX: nextCenterX, centerY: nextCenterY };
+    });
+  }, []);
+
+  const renderImportOverlay = useCallback(() => {
+    if (!pendingImport) return null;
+    const sliderMin = pendingImport.minScale / pendingImport.baseScale;
+    const sliderMax = pendingImport.maxScale / pendingImport.baseScale;
+    const sliderValue = pendingImport.scale / pendingImport.baseScale;
+    const sliderStep = Math.max((sliderMax - sliderMin) / 200, 0.01);
+    const percent = Math.round(sliderValue * 100);
+    return (
+      <div
+        className="import-overlay"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'center',
+          pointerEvents: 'none'
+        }}
+      >
+        <div
+          style={{
+            pointerEvents: 'auto',
+            background: 'rgba(17,17,17,0.82)',
+            color: '#ffffff',
+            padding: '14px 16px',
+            borderRadius: 12,
+            margin: '12px',
+            width: '100%',
+            maxWidth: 360,
+            boxShadow: '0 10px 24px rgba(0,0,0,0.35)'
+          }}
+        >
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 10 }}>
+            Drag to position. Scroll or use the slider to zoom. Press Enter to place, Esc to cancel.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => adjustImportScale(1 / 1.1)}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                color: '#ffffff',
+                border: '1px solid rgba(255,255,255,0.25)',
+                borderRadius: 8,
+                width: 32,
+                height: 32,
+                fontSize: 18,
+                lineHeight: 1
+              }}
+            >
+              -
+            </button>
+            <input
+              type="range"
+              min={sliderMin}
+              max={sliderMax}
+              step={sliderStep}
+              value={sliderValue}
+              onChange={(evt) => handleImportScaleRatio(Number(evt.target.value))}
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              onClick={() => adjustImportScale(1.1)}
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                color: '#ffffff',
+                border: '1px solid rgba(255,255,255,0.25)',
+                borderRadius: 8,
+                width: 32,
+                height: 32,
+                fontSize: 18,
+                lineHeight: 1
+              }}
+            >
+              +
+            </button>
+            <span style={{ width: 52, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+              {percent}%
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={cancelPendingImport}
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                color: '#ffffff',
+                border: '1px solid rgba(255,255,255,0.25)',
+                borderRadius: 8,
+                padding: '6px 14px'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={commitPendingImport}
+              style={{
+                background: '#ff6b35',
+                color: '#1a1a1a',
+                border: 'none',
+                borderRadius: 8,
+                padding: '6px 16px',
+                fontWeight: 600
+              }}
+            >
+              Place Image
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }, [adjustImportScale, cancelPendingImport, commitPendingImport, handleImportScaleRatio, pendingImport]);
+
   const loadFileIntoCanvas = (file: File) => {
+    if (pendingImportRef.current) {
+      announce?.('Finish placing the current image before loading another');
+      return;
+    }
     if (!file || !file.type.startsWith('image/')) {
       announce?.('Unsupported file type — please use an image');
       return;
@@ -829,13 +1228,8 @@ export default function DrawMode({
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
-      drawImageContain(img);
       URL.revokeObjectURL(objectUrl);
-      announce?.('Image loaded into canvas');
-
-      // Flag that this was user-driven upload/drop/paste
-      lastLoadWasUserUploadRef.current = true;
-      setShowPreprocess(true);
+      beginImagePlacement(img);
     };
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
@@ -851,6 +1245,10 @@ export default function DrawMode({
   };
   const handleCanvasDragOver: React.DragEventHandler<HTMLCanvasElement> = (e) => {
     e.preventDefault();
+    if (pendingImportRef.current) {
+      setIsDraggingOver(false);
+      return;
+    }
     setIsDraggingOver(true);
   };
   const handleCanvasDragLeave: React.DragEventHandler<HTMLCanvasElement> = (e) => {
@@ -860,10 +1258,18 @@ export default function DrawMode({
   const handleCanvasDrop: React.DragEventHandler<HTMLCanvasElement> = (e) => {
     e.preventDefault();
     setIsDraggingOver(false);
+    if (pendingImportRef.current) {
+      announce?.('Finish placing the current image before loading another');
+      return;
+    }
     const file = e.dataTransfer?.files?.[0];
     if (file) loadFileIntoCanvas(file);
   };
   const handlePaste: React.ClipboardEventHandler<HTMLDivElement> = (e) => {
+    if (pendingImportRef.current) {
+      announce?.('Finish placing the current image before pasting another');
+      return;
+    }
     const items = e.clipboardData?.items || [];
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
@@ -894,7 +1300,24 @@ export default function DrawMode({
   };
 
   const handleDrawKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (e) => {
+    if (isTypingTarget(e.target)) return;
     const key = e.key.toLowerCase();
+
+    if (pendingImportRef.current) {
+      if ((e.metaKey || e.ctrlKey) && key === 'o') { e.preventDefault(); return; }
+      if ((e.metaKey || e.ctrlKey) && key === 's') { e.preventDefault(); return; }
+      if ((e.metaKey || e.ctrlKey) && key === 'z') { e.preventDefault(); cancelPendingImport(); return; }
+      if (key === 'enter') { e.preventDefault(); commitPendingImport(); return; }
+      if (key === 'escape') { e.preventDefault(); cancelPendingImport(); return; }
+      if (key === '=' || key === '+') { e.preventDefault(); adjustImportScale(e.shiftKey ? 1.2 : 1.1); return; }
+      if (key === '-' || key === '_') { e.preventDefault(); adjustImportScale(e.shiftKey ? 1 / 1.2 : 1 / 1.1); return; }
+      const nudgeStep = e.shiftKey ? 40 : 12;
+      if (key === 'arrowup') { e.preventDefault(); nudgePendingImport(0, -nudgeStep); return; }
+      if (key === 'arrowdown') { e.preventDefault(); nudgePendingImport(0, nudgeStep); return; }
+      if (key === 'arrowleft') { e.preventDefault(); nudgePendingImport(-nudgeStep, 0); return; }
+      if (key === 'arrowright') { e.preventDefault(); nudgePendingImport(nudgeStep, 0); return; }
+      return;
+    }
 
     if ((e.metaKey || e.ctrlKey) && key === 'o') { e.preventDefault(); openFilePicker(); return; }
     if ((e.metaKey || e.ctrlKey) && key === 's') { e.preventDefault(); void handleDownloadDrawing(); return; }
@@ -916,6 +1339,10 @@ export default function DrawMode({
   };
 
   const handleCreate = async () => {
+    if (pendingImportRef.current) {
+      announce?.('Place the imported image before creating variations');
+      return;
+    }
     const canvas = canvasRef.current;
     if (!canvas || !visionPrompt.trim()) return;
 
@@ -959,8 +1386,9 @@ export default function DrawMode({
   useEffect(() => {
     const id = setTimeout(() => {
       const canvas = canvasRef.current;
-      const ctx = canvas?.getContext('2d');
-      if (canvas && ctx) {
+      if (!canvas) return;
+      const ctx = getCanvas2DContext(canvas);
+      if (ctx) {
         resizeCanvasToDisplaySize(false);
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1082,7 +1510,7 @@ export default function DrawMode({
           {/* Canvas Region */}
           <main className="canvas-region">
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelected} style={{ display: 'none' }} />
-            <div className="canvas-holder">
+            <div className="canvas-holder" style={{ position: 'relative' }}>
               <canvas
                 ref={canvasRef}
                 className="drawing-canvas"
@@ -1093,12 +1521,14 @@ export default function DrawMode({
                 onDragOver={handleCanvasDragOver}
                 onDragLeave={handleCanvasDragLeave}
                 onDrop={handleCanvasDrop}
+                onWheel={handleCanvasWheel}
                 aria-label="Drawing canvas"
               />
               {showGrid && <div className="grid-overlay" />}
               {(symmetryH || symmetryV) && (
                 <div className={`sym-guides ${symmetryH ? 'h' : ''} ${symmetryV ? 'v' : ''}`} />
               )}
+              {renderImportOverlay()}
               {isDraggingOver && (
                 <div
                   className="drop-overlay"
@@ -1256,7 +1686,7 @@ export default function DrawMode({
           </div>
 
           {/* Canvas Area */}
-          <div className="mobile-canvas-area">
+          <div className="mobile-canvas-area" style={{ position: 'relative' }}>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelected} style={{ display: 'none' }} />
             <canvas
               ref={canvasRef}
@@ -1268,12 +1698,14 @@ export default function DrawMode({
               onDragOver={handleCanvasDragOver}
               onDragLeave={handleCanvasDragLeave}
               onDrop={handleCanvasDrop}
+              onWheel={handleCanvasWheel}
               aria-label="Drawing canvas"
             />
             {showGrid && <div className="mobile-grid-overlay" />}
             {(symmetryH || symmetryV) && (
               <div className={`mobile-sym-guides ${symmetryH ? 'h' : ''} ${symmetryV ? 'v' : ''}`} />
             )}
+            {renderImportOverlay()}
             {isDraggingOver && (
               <div className="mobile-drop-overlay">
                 Drop image here

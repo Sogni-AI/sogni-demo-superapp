@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --enable-source-maps --watch index.js",
     "start": "node --enable-source-maps index.js",
+    "build": "node -e \"console.log('sogni server: build step not required')\"",
     "debug": "node --enable-source-maps --inspect index.js"
   },
   "dependencies": {

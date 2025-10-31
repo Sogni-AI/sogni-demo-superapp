@@ -103,6 +103,16 @@ export default function App() {
     }, 600);
   }, []);
 
+  const restoreDrawModeAfterFailure = useCallback(
+    (promptText: string, sketchUrl?: string | null) => {
+      if (!sketchUrl) return;
+      setImageToEdit({ url: sketchUrl, prompt: promptText });
+      setIsDrawMode(true);
+      announce('Generation failed — returning to your drawing');
+    },
+    [announce]
+  );
+
   // Track latest sessions to close SSE on unmount
   const currentSessionRef = useRef<GenerationSession | null>(null);
   const heroSessionRef = useRef<GenerationSession | null>(null);
@@ -131,14 +141,20 @@ export default function App() {
     | { type: 'completed' }
     | { type: 'jobFailed' | 'error'; error?: string };
 
+  type SSECallbacks = {
+    onDone?: () => void;
+    onFailure?: (error?: string) => void;
+  };
+
   function attachSSE(
     projectId: string,
     sessionId: string,
     basePrompt: string,
     apply: React.Dispatch<React.SetStateAction<GenerationSession | null>>,
-    onDone?: () => void
+    callbacks?: SSECallbacks
   ) {
     const es = new EventSource(`${API_BASE}/api/progress/${projectId}`);
+    const { onDone, onFailure } = callbacks || {};
 
     es.onmessage = evt => {
       let data: SSEData | undefined;
@@ -175,6 +191,11 @@ export default function App() {
           case 'error':
             es.close();
             announce('Generation failed');
+            if (data.error) {
+              onFailure?.(data.error);
+            } else {
+              onFailure?.();
+            }
             return { ...prev, generating: false, sse: null, error: data.error || 'Generation failed' };
           default:
             return prev;
@@ -184,6 +205,7 @@ export default function App() {
 
     es.onerror = () => {
       es.close();
+      onFailure?.('Connection error');
       apply(prev => (prev ? { ...prev, generating: false, sse: null, error: 'Connection error' } : null));
     };
     apply(prev => (prev ? { ...prev, sse: es } : null));
@@ -224,12 +246,14 @@ export default function App() {
           setCurrentSession(prev => (prev ? { ...prev, compareAgainstUrl: context.compareAgainstUrl } : prev));
         }
 
-        attachSSE(projectId, sessionId, basePrompt, setCurrentSession, () => {
-          setCurrentSession(prev => {
-            if (!prev) return prev;
-            setSessionHistory(history => [prev, ...history.slice(0, 9)]);
-            return prev;
-          });
+        attachSSE(projectId, sessionId, basePrompt, setCurrentSession, {
+          onDone: () => {
+            setCurrentSession(prev => {
+              if (!prev) return prev;
+              setSessionHistory(history => [prev, ...history.slice(0, 9)]);
+              return prev;
+            });
+          }
         });
       } catch (err: any) {
         setCurrentSession(prev => (prev ? { ...prev, generating: false, error: err?.message || 'Failed to start generation' } : null));
@@ -290,18 +314,33 @@ export default function App() {
           setCurrentSession(prev => (prev ? { ...prev, compareAgainstUrl: context.compareAgainstUrl } : prev));
         }
 
-        attachSSE(projectId, sessionId, basePrompt, setCurrentSession, () => {
-          setCurrentSession(prev => {
-            if (!prev) return prev;
-            setSessionHistory(history => [prev, ...history.slice(0, 9)]);
-            return prev;
-          });
+        attachSSE(projectId, sessionId, basePrompt, setCurrentSession, {
+          onDone: () => {
+            setCurrentSession(prev => {
+              if (!prev) return prev;
+              setSessionHistory(history => [prev, ...history.slice(0, 9)]);
+              return prev;
+            });
+          },
+          onFailure: () => {
+            restoreDrawModeAfterFailure(basePrompt, sketchDataUrl || originalSketch || undefined);
+          }
         });
       } catch (err: any) {
         setCurrentSession(prev => (prev ? { ...prev, generating: false, error: err?.message || 'Failed to start generation' } : null));
+        restoreDrawModeAfterFailure(basePrompt, sketchDataUrl || originalSketch || undefined);
       }
     },
-    [announce, currentSession?.id, currentSession?.sse, cleanupSessionBlob, nextSessionId, originalSketch, controlnetType]
+    [
+      announce,
+      currentSession?.id,
+      currentSession?.sse,
+      cleanupSessionBlob,
+      nextSessionId,
+      originalSketch,
+      controlnetType,
+      restoreDrawModeAfterFailure
+    ]
   );
 
   const startHeroGeneration = useCallback(
