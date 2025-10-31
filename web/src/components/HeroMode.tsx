@@ -334,6 +334,36 @@ export default function HeroMode(props: HeroModeProps) {
         )}
       </div>
 
+      {/* Desktop action buttons */}
+      {!isMobile && (
+        <div className="hero-desktop-actions">
+          <button
+            className="hero-action-btn"
+            onClick={handleDownload}
+            aria-label="Download image"
+            title="Download image"
+          >
+            <span>⬇</span> Download
+          </button>
+          <button
+            className="hero-action-btn"
+            onClick={onOpenEdit}
+            aria-label="Edit prompt"
+            title="Edit prompt, style, and ControlNet"
+          >
+            <span>✏️</span> Edit Prompt
+          </button>
+          <button
+            className="hero-action-btn"
+            onClick={onOpenDrawWithImage}
+            aria-label="Edit image"
+            title="Edit image in Draw Mode"
+          >
+            <span>🎨</span> Edit Image
+          </button>
+        </div>
+      )}
+
       {/* Navigation */}
       <button className="hero-nav hero-nav-left" onClick={() => onNavigate('prev')} aria-label="Previous image" tabIndex={-1}>←</button>
       <button className="hero-nav hero-nav-right" onClick={() => onNavigate('next')} aria-label="Next image" tabIndex={-1}>→</button>
