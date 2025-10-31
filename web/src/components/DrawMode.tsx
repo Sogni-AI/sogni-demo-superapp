@@ -916,7 +916,7 @@ export default function DrawMode({
         setShowLassoPrompt(true);
         setLassoPrompt('');
         setControlnetType('inpaint');
-        announce?.('Describe how you want to change the selected area');
+        announce?.('Describe the complete image as you want it to look');
       } else {
         if (points.length > 0) {
           announce?.('Selection needs at least three points');
@@ -1221,7 +1221,7 @@ export default function DrawMode({
       }
       const trimmedPrompt = lassoPrompt.trim();
       if (!trimmedPrompt) {
-        announce?.('Describe what you want to change in the selected area');
+        announce?.('Please describe the complete image as you want it to look');
         return;
       }
       if (isSubmittingLasso) return;
@@ -2374,12 +2374,12 @@ export default function DrawMode({
             }}
           >
             <h3>Inpaint Selection</h3>
-            <p className="lasso-modal__hint">Describe how you want the highlighted area to change.</p>
+            <p className="lasso-modal__hint">Describe the complete image as you want it to look. Include both the existing elements and your desired changes.</p>
             <textarea
               className="lasso-modal__input"
               value={lassoPrompt}
               onChange={(evt) => setLassoPrompt(evt.target.value)}
-              placeholder="e.g. replace the sword with a bouquet of flowers"
+              placeholder="e.g. rabbit holding a carrot"
               rows={4}
               disabled={isSubmittingLasso}
               autoFocus
