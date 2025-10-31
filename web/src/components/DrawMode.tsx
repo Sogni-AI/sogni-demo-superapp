@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HISTORY_LIMIT, MAX_DPR } from '../constants';
 import './MobileDrawStyles.css';
+import PreprocessModal from './PreprocessModal';
 
 type DrawModeProps = {
   isMobile: boolean;
@@ -27,6 +28,9 @@ type DrawModeProps = {
  * ✅ Symmetry (H/V), grid, undo/redo, invert
  * ✅ Upload / paste / drag-drop / download
  * ✅ Prompt enhancer button
+ *
+ * ✨ New (Oct 2025): optional preprocessing step (B/W + high contrast + posterize)
+ *    shown immediately after a user uploads/drops/pastes an image into the canvas.
  */
 export default function DrawMode({
   isMobile,
@@ -77,6 +81,11 @@ export default function DrawMode({
   const lastBrushPointRef = useRef<{ x: number; y: number } | null>(null);
   const lastPressureRef = useRef<number>(1);
   const activePointerIdRef = useRef<number | null>(null);
+
+  // ===== Preprocess modal state =====
+  const [showPreprocess, setShowPreprocess] = useState(false);
+  const lastLoadWasUserUploadRef = useRef(false); // true only for file/drag/paste loads
+  const PREPROCESS_DEFAULTS = useRef({ levels: 3, contrast: 0.8 });
 
   // -------- Utilities --------
 
@@ -133,11 +142,13 @@ export default function DrawMode({
     };
   }, [resizeCanvasToDisplaySize]);
 
-  // Load initial image if provided
+  // Load initial image if provided (from "Edit Image" flow).
+  // We *do not* prompt for preprocessing here by default; that prompt is intended
+  // for user uploads/drops/pastes. You can opt in by flipping the ref below
+  // if you want to preprocess AI images too.
   useEffect(() => {
     if (!initialImage?.url) return;
 
-    // Delay loading to ensure all functions and canvas are ready
     const timer = setTimeout(() => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
@@ -158,11 +169,9 @@ export default function DrawMode({
         const dx = Math.round((cw - dw) / 2);
         const dy = Math.round((ch - dh) / 2);
 
-        // Clear and draw the image
         ctx.clearRect(0, 0, cw, ch);
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, cw, ch);
-
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(img, dx, dy, dw, dh);
@@ -170,12 +179,20 @@ export default function DrawMode({
         announce?.('Image loaded into canvas');
 
         // Save initial state to undo stack
-        const imageData = ctx.getImageData(0, 0, cw, ch);
-        setUndoStack([imageData]);
+        try {
+          const imageData = ctx.getImageData(0, 0, cw, ch);
+          setUndoStack([imageData]);
+        } catch {
+          // ignore
+        }
+
+        // If you want to also prompt when an AI image is brought into Draw Mode,
+        // uncomment the following two lines:
+        // lastLoadWasUserUploadRef.current = true;
+        // setShowPreprocess(true);
       };
 
       img.onerror = () => {
-        console.error('Failed to load initial image');
         announce?.('Failed to load image');
       };
 
@@ -230,7 +247,7 @@ export default function DrawMode({
         return next.length > HISTORY_LIMIT ? next.slice(next.length - HISTORY_LIMIT) : next;
       });
       setRedoStack([]);
-    } catch {}
+    } catch {/* ignore */}
   }, []);
 
   const applyImageData = (img: ImageData | null) => {
@@ -240,6 +257,57 @@ export default function DrawMode({
     ctx.putImageData(img, 0, 0);
     setDrips([]);
   };
+
+  // ===== Preprocess pipeline =====
+  const preprocessCanvasForControlnet = useCallback((levels = 3, contrastStrength = 0.8) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d', { willReadFrequently: true } as any);
+    if (!canvas || !ctx) return;
+
+    // Snapshot so user can undo preprocessing
+    pushUndoSnapshot();
+
+    let imageData: ImageData;
+    try {
+      imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    } catch {
+      return;
+    }
+    const data = imageData.data;
+
+    // Contrast coefficient C: [0..255]
+    const C = Math.max(0, Math.min(255, Math.round(contrastStrength * 255)));
+    // Standard contrast formula
+    const factor = (259 * (C + 255)) / (255 * (259 - C) || 1);
+
+    // Posterize levels
+    const L = Math.max(2, Math.min(6, Math.floor(levels)));
+    const step = 255 / (L - 1);
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      // Luminance-based grayscale (sRGB weights)
+      let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+      // Contrast boost around mid‑point
+      y = factor * (y - 128) + 128;
+      if (y < 0) y = 0;
+      else if (y > 255) y = 255;
+
+      // Posterize to L gray levels
+      const q = Math.round(y / step) * step;
+
+      data[i] = data[i + 1] = data[i + 2] = q;
+      data[i + 3] = 255;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    setDrips([]);
+    announce?.('Image preprocessed for ControlNets');
+  }, [announce, pushUndoSnapshot]);
 
   const undo = () => {
     const canvas = canvasRef.current;
@@ -764,6 +832,10 @@ export default function DrawMode({
       drawImageContain(img);
       URL.revokeObjectURL(objectUrl);
       announce?.('Image loaded into canvas');
+
+      // Flag that this was user-driven upload/drop/paste
+      lastLoadWasUserUploadRef.current = true;
+      setShowPreprocess(true);
     };
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
@@ -856,7 +928,6 @@ export default function DrawMode({
       r.readAsDataURL(blob);
     });
 
-    // Parent will close the Draw Mode and start controlnet generation
     onCreate({
       prompt: visionPrompt.trim(),
       style: 'Simple Ink',
@@ -867,38 +938,20 @@ export default function DrawMode({
   };
 
   const handleDisabledCreateClick = () => {
-    // Only show hint if user has drawn something but hasn't entered a prompt
     if (!visionPrompt.trim() && undoStack.length > 0) {
       setShowPromptHint(true);
-
-      // Focus the input to make it even more obvious
       const promptInput = document.querySelector('.mobile-prompt-input') as HTMLInputElement;
-      if (promptInput) {
-        promptInput.focus();
-      }
-
-      // Auto-hide the hint after 3 seconds
-      setTimeout(() => {
-        setShowPromptHint(false);
-      }, 3000);
+      if (promptInput) promptInput.focus();
+      setTimeout(() => setShowPromptHint(false), 3000);
     }
   };
 
   const handleDesktopDisabledClick = () => {
-    // Only show hint if user has drawn something but hasn't entered a prompt
     if (!visionPrompt.trim() && undoStack.length > 0) {
       setShowPromptHint(true);
-
-      // Focus the input to make it even more obvious
       const promptInput = document.querySelector('.vision-input') as HTMLInputElement;
-      if (promptInput) {
-        promptInput.focus();
-      }
-
-      // Auto-hide the hint after 3 seconds
-      setTimeout(() => {
-        setShowPromptHint(false);
-      }, 3000);
+      if (promptInput) promptInput.focus();
+      setTimeout(() => setShowPromptHint(false), 3000);
     }
   };
 
@@ -940,8 +993,11 @@ export default function DrawMode({
               <button className="icon-btn" onClick={onClose} aria-label="Close draw mode" title="Close">‹</button>
               <div className="tb-title">Draw</div>
             </div>
-            <div className="tb-center" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div className={`desktop-prompt-wrapper ${showPromptHint ? 'hint-active' : ''}`} style={{ position: 'relative' }}>
+            <div className="tb-center" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <div
+                className={`desktop-prompt-wrapper ${showPromptHint ? 'hint-active' : ''}`}
+                style={{ position: 'relative', flex: 1, minWidth: 0 }}
+              >
                 <input
                   type="text"
                   value={visionPrompt}
@@ -969,8 +1025,7 @@ export default function DrawMode({
                       const enhancedPrompt = await response.text();
                       if (enhancedPrompt) setVisionPrompt(enhancedPrompt);
                     }
-                  } catch (error) {
-                    console.error('Failed to enhance prompt:', error);
+                  } catch {
                   } finally {
                     setIsEnhancingPrompt(false);
                   }
@@ -980,7 +1035,8 @@ export default function DrawMode({
                 style={{
                   fontSize: '1.2rem',
                   opacity: !visionPrompt.trim() || isEnhancingPrompt ? 0.5 : 1,
-                  cursor: !visionPrompt.trim() || isEnhancingPrompt ? 'not-allowed' : 'pointer'
+                  cursor: !visionPrompt.trim() || isEnhancingPrompt ? 'not-allowed' : 'pointer',
+                  flexShrink: 0
                 }}
               >
                 {isEnhancingPrompt ? '⏳' : '🪄'}
@@ -1187,8 +1243,7 @@ export default function DrawMode({
                     const enhancedPrompt = await response.text();
                     if (enhancedPrompt) setVisionPrompt(enhancedPrompt);
                   }
-                } catch (error) {
-                  console.error('Failed to enhance prompt:', error);
+                } catch {
                 } finally {
                   setIsEnhancingPrompt(false);
                 }
@@ -1400,6 +1455,23 @@ export default function DrawMode({
           </div>
         </div>
       )}
+
+      {/* ✨ Preprocess Modal */}
+      <PreprocessModal
+        open={showPreprocess && lastLoadWasUserUploadRef.current}
+        onClose={() => {
+          lastLoadWasUserUploadRef.current = false;
+          setShowPreprocess(false);
+        }}
+        onConfirm={({ levels, contrast }) => {
+          PREPROCESS_DEFAULTS.current = { levels, contrast };
+          preprocessCanvasForControlnet(levels, contrast);
+          lastLoadWasUserUploadRef.current = false;
+          setShowPreprocess(false);
+        }}
+        defaultLevels={PREPROCESS_DEFAULTS.current.levels}
+        defaultContrast={PREPROCESS_DEFAULTS.current.contrast}
+      />
     </div>
   );
 }
